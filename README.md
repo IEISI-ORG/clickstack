@@ -3,12 +3,12 @@
   <a href="https://clickhouse.com/o11y">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="./clickstack.png">
-      <img src="./clickstack.png" alt="ClickStack logo" width="128" height="128"/>
+      <img src="./clickstack.png" alt="ClickStack logo" width="256" height="256"/>
     </picture>
   </a>
 </p>
 
-# ClickStack - the open-source observability stack for OpenTelemetry at scale
+# ClickStack - the open-source observability stack
 
 ClickStack is a production-grade observability platform built on ClickHouse that unifies logs, traces, metrics, and sessions into one high-performance solution designed for OpenTelemetry data at scale.
 
