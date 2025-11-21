@@ -12,13 +12,13 @@
 
 ClickStack is a production-grade observability platform built on ClickHouse that unifies logs, traces, metrics, and sessions into one high-performance solution designed for OpenTelemetry data at scale.
 
-> **This is the parent repository for the ClickStack product and only contains stack-wide artifacts. Raise issues here for stack-wide issues only.** Each of the 3 components of the stack: OpenTelemetry collector, ClickHouse, and the HyperDX UI has their own repository [linked below](#components-and-projects).
+> **This is the parent repository for the ClickStack product and only contains stack-wide artifacts. Raise issues here for stack-wide issues only.** Each of the 3 components of the stack: OpenTelemetry collector, ClickHouse, and the HyperDX UI have [their own repository](#components-and-projects).
 
 ## Overview
 
 ClickStack lets developers and SREs trace issues end-to-end without switching tools or manually correlating timestamps and IDs.
 
-![](./hyperdx-landing.png)
+![HyperDX landing image](./hyperdx-landing.png)
 
 At the core of ClickStack is a simple but powerful idea: all observability data should be ingested as wide, rich events. These events are stored in ClickHouse tables by data type - logs, traces, metrics, and sessions - but remain fully queryable and cross-correlatable at the database level. ClickStack is built to handle high-cardinality workloads efficiently by leveraging ClickHouse's column-oriented architecture, native JSON support, and fully parallelized execution engine. 
 
@@ -38,13 +38,12 @@ ClickStack consists of three core components, each with its own project:
 
 * [Official website](https://clickhouse.com/o11y) has a quick high-level overview of ClickStack on the main page.
 * [ClickHouse Cloud](https://clickhouse.cloud) ClickHouse as a service, with ClickStack included, built by the creators and maintainers.
-* [Tutorial](https://clickhouse.com/docs/use-cases/observability/clickstack/getting-started) shows how to set up and get started with ClickStack.
+* [Tutorial](https://clickhouse.com/docs/use-cases/observability/clickstack/getting-started) shows how to set up and get started with ClickStack in minutes.
 * [Documentation](https://clickhouse.com/docs/use-cases/observability/clickstack/overview) provides more in-depth information.
-* [YouTube channel](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jeR6u4AFsVC23dnjtT7iKY) has a lot of content about ClickStack in video format.
-* [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse and ClickStack users in real-time. For Slack, join the #olly-clickstack group to speak to the maintainers.
+* [YouTube channel](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jeR6u4AFsVC23dnjtT7iKY) has video content for ClickStack.
+* [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickStack (and ClickHouse) users in real-time. In Slack, find the maintainers in the `#olly-clickstack` group.
 * [Blog](https://clickhouse.com/blog/) Clickstack-related articles are published to the Clickhouse blog, as well as announcements and reports about events.
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
-
 
 ## How To Install
 
@@ -70,7 +69,7 @@ See our [Docker Compose guide](https://clickhouse.com/docs/use-cases/observabili
 
 ### Helm
 
-See out [Helm guide](https://clickhouse.com/docs/use-cases/observability/clickstack/deployment/helm).
+See the [Helm guide](https://clickhouse.com/docs/use-cases/observability/clickstack/deployment/helm).
 
 Helm chart repository [here](https://github.com/hyperdxio/helm-charts).
 
@@ -140,3 +139,4 @@ ClickStack is fully open-source licensed. Users can find the licenses for each o
 
 - [ClickHouse - Apache 2.0](https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE)
 - [HyperDX - MIT License](https://github.com/hyperdxio/hyperdx/blob/main/LICENSE)
+- OpenTelemetry Collector - Apache 2.0
