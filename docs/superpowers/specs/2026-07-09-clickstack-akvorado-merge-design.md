@@ -122,9 +122,15 @@ existing service, now also aliased `ch-server`.
 - The script reads `${SNMP_COMMUNITY}` from the gitignored secrets env and
   writes the gitignored `docker/otel/snmp-collector.yaml` from the committed
   `snmp-collector.example.yaml` template.
+- **Two target sources (union).** Endpoints = devices from `default.exporters`
+  **∪** an optional manually-maintained `docker/otel/snmp-extra-targets.txt`
+  (gitignored; one IP per line) for non-flow devices to be added later. The
+  generator dedups both. Per-device community strings are a documented later
+  extension (current devices share one community).
 - **Static snapshot:** targets are captured at generation time. Re-run the
-  script (a documented step) when new exporters start sending flows; the OTEL
-  `snmpreceiver` does not discover targets dynamically.
+  script (a documented step) when new exporters start sending flows or after
+  editing the extra-targets file; the OTEL `snmpreceiver` does not discover
+  targets dynamically.
 
 ### Network
 - Single network from Akvorado's `default`: IPv6 enabled, fixed subnets

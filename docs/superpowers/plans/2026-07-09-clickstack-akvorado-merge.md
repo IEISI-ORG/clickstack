@@ -30,7 +30,9 @@
 - `docker/clickhouse/akvorado/{observability.xml,server.xml}` — copied CH fragments (committed; no secrets).
 - `docker/otel/snmp-collector.example.yaml` — SNMP config template (committed).
 - `docker/otel/snmp-collector.yaml` — generated per-device config (gitignored).
-- `docker/otel/gen-snmp-targets.sh` — target generator (committed).
+- `docker/otel/gen-snmp-targets.sh` — target generator: exporters table ∪ extra file (committed).
+- `docker/otel/snmp-extra-targets.example.txt` — manual extra-targets template (committed).
+- `docker/otel/snmp-extra-targets.txt` — real manual targets, optional (gitignored).
 - `.env` — merged environment, no secrets (committed).
 - `docker-compose.yml` — combined stack (committed; overwrites the ClickStack-only one).
 
@@ -55,6 +57,7 @@ Append these lines to the end of `.gitignore`:
 config/akvorado/*.yaml
 !config/akvorado/*.example.yaml
 docker/otel/snmp-collector.yaml
+docker/otel/snmp-extra-targets.txt
 config/secrets/
 !config/secrets/*.example
 ```
@@ -661,6 +664,21 @@ service:
       exporters: [otlp]
 ```
 
+- [ ] **Step 1b: Create the committed extra-targets example**
+
+Non-flow devices (switches, hosts that don't export NetFlow) are added here later.
+Create `docker/otel/snmp-extra-targets.example.txt`:
+
+```text
+# Extra SNMP targets merged with devices discovered from default.exporters.
+# One IP per line; '#' starts a comment. Copy to snmp-extra-targets.txt (gitignored) and edit.
+# 10.0.0.2
+# 10.0.0.3
+```
+
+The real `docker/otel/snmp-extra-targets.txt` is gitignored (Task 1) and optional;
+the generator merges it with the exporters-table addresses.
+
 - [ ] **Step 2: Create the generator `docker/otel/gen-snmp-targets.sh`**
 
 ```bash
@@ -670,13 +688,26 @@ service:
 set -euo pipefail
 
 CH_CONTAINER="${CH_CONTAINER:-akvorado-clickhouse-1}"
+EXTRA_FILE="${EXTRA_FILE:-$(dirname "$0")/snmp-extra-targets.txt}"
 OUT="$(dirname "$0")/snmp-collector.yaml"
 
+# Source 1: exporters discovered from the flow database.
 mapfile -t ADDRS < <(docker exec -i "$CH_CONTAINER" clickhouse-client -q \
-  "SELECT DISTINCT replaceRegexpOne(toString(ExporterAddress),'^::ffff:','') FROM default.exporters ORDER BY 1")
+  "SELECT DISTINCT replaceRegexpOne(toString(ExporterAddress),'^::ffff:','') FROM default.exporters ORDER BY 1" 2>/dev/null || true)
+
+# Source 2: optional manually-maintained targets (gitignored), one IP per line, '#' comments allowed.
+if [ -f "$EXTRA_FILE" ]; then
+  while IFS= read -r line; do
+    line="${line%%#*}"; line="$(echo "$line" | tr -d '[:space:]')"
+    [ -n "$line" ] && ADDRS+=("$line")
+  done < "$EXTRA_FILE"
+fi
+
+# Union: dedup, stable sorted order.
+mapfile -t ADDRS < <(printf '%s\n' "${ADDRS[@]}" | sort -u)
 
 if [ "${#ADDRS[@]}" -eq 0 ]; then
-  echo "No exporters found in default.exporters; is ClickHouse up and ingesting?" >&2
+  echo "No SNMP targets: default.exporters is empty and no $EXTRA_FILE provided." >&2
   exit 1
 fi
 
@@ -754,9 +785,9 @@ and adjust the metric/attribute keys in both `snmp-collector.example.yaml` and t
 
 ```bash
 git check-ignore docker/otel/snmp-collector.yaml && echo REAL_IGNORED
-git add docker/otel/snmp-collector.example.yaml docker/otel/gen-snmp-targets.sh
-git status   # confirm snmp-collector.yaml NOT staged
-git commit -m "feat: SNMP collector template and exporters-table target generator"
+git add docker/otel/snmp-collector.example.yaml docker/otel/gen-snmp-targets.sh docker/otel/snmp-extra-targets.example.txt
+git status   # confirm snmp-collector.yaml and snmp-extra-targets.txt NOT staged
+git commit -m "feat: SNMP collector template + generator (exporters table union extra targets)"
 ```
 
 ---
