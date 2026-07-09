@@ -100,20 +100,31 @@ existing service, now also aliased `ch-server`.
 - New service `snmp-collector`, image
   `otel/opentelemetry-collector-contrib:<pinned>` (bundles `snmpreceiver`;
   the HyperDX collector image is left untouched).
-- Config `docker/otel/snmp-collector.yaml`:
-  - `receivers.snmp` — per-device `endpoint: udp://<device-ip>:161`, SNMP
-    version + community (default v2c, community reused from Akvorado
-    `CHANGEME` or per-site), and metric definitions from IF-MIB
-    (`ifHCInOctets`, `ifHCOutOctets`, `ifInErrors`, `ifOutErrors`,
-    `ifOperStatus`, ...); optionally HOST-RESOURCES CPU/memory.
+- Config `docker/otel/snmp-collector.yaml` (generated, gitignored):
+  - `receivers.snmp` — one `endpoint: udp://<device-ip>:161` per exporter,
+    SNMP v2c, community from `${SNMP_COMMUNITY}` (reuses Akvorado's existing
+    community), and metric definitions from IF-MIB (`ifHCInOctets`,
+    `ifHCOutOctets`, `ifInErrors`, `ifOutErrors`, `ifOperStatus`, ...);
+    HOST-RESOURCES CPU/memory deferred.
   - `exporters.otlp` — `endpoint: otel-collector:4317`, `tls.insecure: true`.
   - `service.pipelines.metrics` wiring snmp → otlp.
 - Data path: `snmp-collector → otel-collector → ClickHouse → HyperDX`.
 - **No host ports** — polling is outbound UDP/161 to devices. The container
   needs network reachability to device management IPs; on the shared network it
   can reach `otel-collector`.
-- Device targets/credentials are site-specific and supplied by the user; the
-  shipped config is a template with example targets.
+
+**Target discovery from the exporters table.**
+- Generator script `docker/otel/gen-snmp-targets.sh` queries the shared
+  ClickHouse and renders the receiver endpoints:
+  `SELECT DISTINCT replaceRegexpOne(toString(ExporterAddress),'^::ffff:','')
+   FROM default.exporters` → one SNMP endpoint per flow exporter (e.g.
+  `192.168.88.1`, name `CHANGEME`).
+- The script reads `${SNMP_COMMUNITY}` from the gitignored secrets env and
+  writes the gitignored `docker/otel/snmp-collector.yaml` from the committed
+  `snmp-collector.example.yaml` template.
+- **Static snapshot:** targets are captured at generation time. Re-run the
+  script (a documented step) when new exporters start sending flows; the OTEL
+  `snmpreceiver` does not discover targets dynamically.
 
 ### Network
 - Single network from Akvorado's `default`: IPv6 enabled, fixed subnets
@@ -152,16 +163,49 @@ Merge into one root `.env`:
   compose. Akvorado image tag (`ghcr.io/akvorado/akvorado:2.0.1`) and support
   images pinned inline.
 
+## Secrets handling (public fork)
+This branch is intended to be pushed to a **public** fork, so no community
+strings, device IPs, credentials, or site topology may be committed.
+
+**Committed (sanitized templates + non-secret infra):**
+- `docker-compose.yml`, merged `.env` (image/version/ports only — no secrets).
+- `config/akvorado/*.example.yaml` — Akvorado config with placeholders
+  (community → `CHANGME`/`${...}`, example networks/asns).
+- `docker/otel/snmp-collector.example.yaml` — SNMP config template.
+- `docker/otel/gen-snmp-targets.sh` — generator (no embedded secrets).
+- `config/secrets/snmp.env.example` — `SNMP_COMMUNITY=changeme`.
+
+**Gitignored (real values, present only on the host):**
+- `config/akvorado/*.yaml` (real `outlet.yaml` with community `CHANGEME`,
+  `akvorado.yaml`, `inlet.yaml`, `console.yaml`, `demo.yaml`).
+- `docker/otel/snmp-collector.yaml` (generated; real device IPs).
+- `config/secrets/snmp.env` (`SNMP_COMMUNITY=CHANGEME`).
+
+**`.gitignore` additions:**
+```
+config/akvorado/*.yaml
+!config/akvorado/*.example.yaml
+docker/otel/snmp-collector.yaml
+config/secrets/
+!config/secrets/*.example
+```
+The `snmp-collector` service loads the community via
+`env_file: config/secrets/snmp.env`.
+
 ## File layout (target)
 ```
 ClickStack/
-  docker-compose.yml          # combined, authored, no `extends`
-  .env                        # merged; COMPOSE_PROJECT_NAME=akvorado
-  config/akvorado/            # copied: akvorado.yaml, console.yaml, inlet.yaml,
-                              #         outlet.yaml, demo.yaml
-  docker/clickhouse/akvorado/ # copied: observability.xml, server.xml
-  docker/akvorado/            # copied geoip Dockerfile/script (IPinfo)
-  docker/otel/snmp-collector.yaml  # SNMP receiver -> OTLP config (template)
+  docker-compose.yml               # combined, authored, no `extends`
+  .env                             # merged; COMPOSE_PROJECT_NAME=akvorado (no secrets)
+  config/akvorado/*.yaml           # REAL akvorado config (gitignored)
+  config/akvorado/*.example.yaml   # sanitized templates (committed)
+  config/secrets/snmp.env          # SNMP_COMMUNITY (gitignored)
+  config/secrets/snmp.env.example  # placeholder (committed)
+  docker/clickhouse/akvorado/      # copied: observability.xml, server.xml
+  docker/akvorado/                 # copied geoip Dockerfile/script (IPinfo)
+  docker/otel/snmp-collector.example.yaml  # SNMP config template (committed)
+  docker/otel/snmp-collector.yaml          # generated (gitignored)
+  docker/otel/gen-snmp-targets.sh          # target generator (committed)
 ```
 
 ## Cutover procedure (operational)
@@ -200,6 +244,12 @@ run alongside the existing `/home/terry/akvorado` deployment.
 - **SNMP device reachability / credentials.** `snmp-collector` must route to
   device management IPs on UDP/161 with a valid community; wrong community or
   unreachable targets yields no metrics (check collector logs).
+- **Stale SNMP targets.** Generated config is a snapshot of `default.exporters`;
+  new exporters need a `gen-snmp-targets.sh` re-run. Document as an ops step.
+- **Secret leakage into the public fork.** Real `config/akvorado/*.yaml`,
+  generated `snmp-collector.yaml`, and `config/secrets/*` must stay gitignored.
+  Verify with `git status` / `git check-ignore` before any push (see
+  Verification step 9).
 
 ## Verification plan
 1. `docker compose config` parses without error.
@@ -209,7 +259,11 @@ run alongside the existing `/home/terry/akvorado` deployment.
 5. HyperDX UI reachable on `:1800`, connected via `ch-server` alias.
 6. Akvorado console reachable via Traefik `:8081`; send a test flow to inlet
    (2055/udp) and confirm new rows land in `default.flows`.
-7. `snmp-collector` logs show successful polls; interface metrics
-   (e.g. `ifHCInOctets`) appear as a metric source in HyperDX for at least one
-   configured device.
-8. `git` diff review: only intended files added/changed.
+7. `gen-snmp-targets.sh` produces a `snmp-collector.yaml` listing the exporter
+   address(es) from `default.exporters` (e.g. `192.168.88.1`).
+8. `snmp-collector` logs show successful polls; interface metrics
+   (e.g. `ifHCInOctets`) appear as a metric source in HyperDX for that device.
+9. **Secret-safety check:** `git status --ignored` and `git check-ignore
+   config/akvorado/outlet.yaml docker/otel/snmp-collector.yaml
+   config/secrets/snmp.env` confirm real secrets are ignored; `git diff` shows
+   only intended (sanitized) files staged.
