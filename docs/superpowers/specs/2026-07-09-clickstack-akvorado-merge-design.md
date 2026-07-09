@@ -9,157 +9,167 @@ Status: Design — awaiting review
 Combine the ClickStack (HyperDX observability) and Akvorado (network flow
 analytics) Docker Compose deployments into a single `docker compose up` stack,
 sharing one ClickHouse instance so flow data and observability data live in the
-same database.
+same database — **while preserving the ~38.4M flow rows already ingested by the
+running Akvorado deployment.**
 
 ## Decisions (locked)
 
-1. **Single shared ClickHouse.** Akvorado writes flows into ClickStack's
-   `ch-server`; HyperDX queries the same instance. Akvorado's own `clickhouse`
-   service is dropped.
-2. **ClickHouse version 25.8-alpine.** Akvorado 2.0.1 supports only the 25.x LTS
-   line (`clickhouse-server:25.8`); ClickStack was on 26.1. The shared instance
-   runs `clickhouse/clickhouse-server:25.8-alpine` (small downgrade for
-   ClickStack, backward-compatible for HyperDX).
+1. **Single shared ClickHouse = Akvorado's existing instance.** The live
+   Akvorado ClickHouse (backed by volume `akvorado_akvorado-clickhouse`, ~780
+   MiB / 38.4M rows across `flows*`, `exporters`, dictionaries) becomes the
+   shared database. HyperDX and otel-collector point at it; it gains a network
+   alias `ch-server`. ClickStack's own `ch-server` (empty `default` DB) is
+   dropped.
+2. **ClickHouse version 25.8-alpine (unchanged).** Akvorado 2.0.1 supports only
+   the 25.x LTS line, and the existing data was written by 25.8. Keeping the
+   Akvorado instance means no downgrade and no data reset.
 3. **Single authored compose + copied config.** One root `docker-compose.yml`
-   with all services inlined (Akvorado images pinned directly, no `extends:` /
-   `versions.yml` indirection). Akvorado config and needed ClickHouse fragments
-   are copied into the ClickStack repo.
+   with all services inlined (images pinned directly, no `extends:` /
+   `versions.yml`). Akvorado app config and ClickHouse fragments are copied into
+   the ClickStack repo.
+4. **HyperDX app on host port 1800** (moved from 8080 to avoid Traefik).
+5. **Combined compose project name = `akvorado`** so it re-attaches the existing
+   `akvorado_*` named volumes instead of creating empty ones.
 
-## Source stacks (as-is)
+## Current runtime facts (verified 2026-07-09)
 
-### ClickStack (`/home/terry/ClickStack`)
-- `db` — mongo:5.0.32-focal (HyperDX metadata), internal only.
-- `otel-collector` — OTLP receiver; host ports 13133, 24225, 4317, 4318, 8888.
-- `app` — HyperDX UI; host ports `HYPERDX_API_PORT=8000`, `HYPERDX_APP_PORT=8080`, OPAMP 4320.
-- `ch-server` — clickhouse-server:26.1-alpine; internal only; mounts
-  `config.xml` + `users.xml`; `default` user, empty password.
-- Network: single `internal` bridge. Volumes: bind mounts under `.volumes/`.
-
-### Akvorado (`/home/terry/akvorado`)
-- `kafka`, `kafka-ui`, `redis`.
-- `akvorado-orchestrator`, `akvorado-console`, `akvorado-inlet`
-  (UDP 2055/4739/6343), `akvorado-outlet` (10179/tcp), `akvorado-conntrack-fixer`
-  (host network).
-- `clickhouse` — clickhouse-server:25.8; mounts `observability.xml`, `server.xml`.
-- `traefik` — reverse proxy; host `127.0.0.1:8080` (private) + `8081` (public).
-- IPinfo geoip updater (default enrichment, no license key).
-- Network: `default` bridge with IPv6 + fixed subnet
-  (`247.16.14.0/24`, `fd1c:8ce3:6fb:1::/64`), bridge name `br-akvorado`.
-- Config: `extends:` from `versions.yml`; app config under `../config`.
-- Volumes: named (`akvorado-kafka`, `akvorado-geoip`, `akvorado-clickhouse`,
-  `akvorado-run`, `akvorado-console-db`).
+- ClickStack ClickHouse (`.volumes/ch_data`): `default` DB **empty** (no
+  `otel_*` tables); 89M is only `system.*` logs. Nothing to preserve.
+- Akvorado stack is **running** (up 2 days): `akvorado-clickhouse-1`
+  (`clickhouse/clickhouse-server:25.8`, healthy) holds:
+  - `default.flows` — 780.72 MiB, 38,420,480 rows
+  - `default.flows_5m0s` / `flows_1h0m0s` / `flows_1m0s` — rollups
+  - `default.exporters` + dictionaries (`asns`, `networks`, `protocols`, ...)
+- Existing named volumes: `akvorado_akvorado-clickhouse`,
+  `akvorado_akvorado-kafka`, `akvorado_akvorado-console-db`,
+  `akvorado_akvorado-geoip`, `akvorado_akvorado-run`.
 
 ## Combined architecture
 
 ### Services
-Kept from ClickStack: `db`, `otel-collector`, `app`, `ch-server` (→ 25.8-alpine,
-aliased `clickhouse`).
+From ClickStack: `db` (mongo:5.0.32-focal), `otel-collector`, `app` (HyperDX).
 
-Kept from Akvorado: `kafka`, `kafka-ui`, `redis`, `akvorado-orchestrator`,
-`akvorado-console`, `akvorado-inlet`, `akvorado-outlet`,
-`akvorado-conntrack-fixer`, `traefik`, IPinfo geoip updater.
+From Akvorado (images pinned inline from `versions.yml`): `kafka`
+(apache/kafka:4.1.0), `kafka-ui`, `redis` (valkey/valkey:7.2),
+`akvorado-orchestrator`, `akvorado-console`, `akvorado-inlet`,
+`akvorado-outlet`, `akvorado-conntrack-fixer`, `traefik` (traefik:v3.6.1),
+IPinfo geoip updater (default enrichment, no license key).
 
-Dropped: Akvorado `clickhouse` service and `akvorado-clickhouse` volume.
+**Shared:** `clickhouse` (clickhouse/clickhouse-server:25.8) — Akvorado's
+existing service, now also aliased `ch-server`.
+
+**Dropped:** ClickStack's `ch-server` service and its empty `.volumes/ch_data`.
 
 ### Shared ClickHouse wiring
-- `ch-server` image → `clickhouse/clickhouse-server:25.8-alpine`.
-- Add a **network alias** `clickhouse` to `ch-server` so Akvorado's config
-  (`clickhousedb.servers: clickhouse:9000`, console/outlet deps) resolves it
-  with zero Akvorado config edits.
-- HyperDX keeps referencing `ch-server` (its `DEFAULT_CONNECTIONS`).
-- ClickHouse must reach `kafka:9092` (Kafka table engine) — satisfied by the
-  shared network.
+- Service `clickhouse` keeps volume `akvorado_akvorado-clickhouse` (declared so
+  the combined stack re-attaches it — via project name `akvorado` or an
+  `external`/explicit `name:` volume mapping).
+- **Network aliases:** `clickhouse` (Akvorado's config references
+  `clickhouse:9000`) **and** `ch-server` (HyperDX `DEFAULT_CONNECTIONS` uses
+  `http://ch-server:8123`; otel-collector uses `tcp://ch-server:9000`).
+- Akvorado config files need **no edits**.
+- ClickHouse reaches `kafka:9092` (Kafka table engine) via the shared network.
 
 ### Schema ownership (no collision)
-- Akvorado orchestrator auto-creates flow tables + Kafka-engine consumer +
-  dictionaries in `default` on startup.
-- HyperDX / otel-collector auto-creates `otel_logs`, `otel_traces`,
+- Existing Akvorado tables (`flows*`, `exporters`, dictionaries) stay in
+  `default`.
+- HyperDX / otel-collector create `otel_logs`, `otel_traces`,
   `otel_metrics_*`, `hyperdx_sessions` in `default`
   (`HYPERDX_OTEL_EXPORTER_CREATE_LEGACY_SCHEMA=true`).
-- Different table names in the same `default` database. No collision.
+- Distinct table names in the same `default` DB. No collision with existing data.
 
-### ClickHouse config reconciliation
-- Keep ClickStack `config.xml` (prometheus on 9363, `debug` logger,
-  `default` database, remote_servers) as authoritative base.
-- Keep ClickStack `users.xml` (`default`/empty, `api`, `worker`).
-- **Add** Akvorado `server.xml` as a `config.d` fragment (system-log TTLs =
-  30-day retention; purely additive).
-- **Skip** Akvorado `observability.xml` — its `<prometheus>` (no port) and
-  `fatal`/JSON logger conflict with ClickStack's `config.xml`. ClickStack
-  already exposes Prometheus metrics on 9363.
+### ClickHouse config
+- Keep Akvorado's ClickHouse config fragments as the container already uses
+  them: `observability.xml` (Prometheus `/metrics` + JSON logger) and
+  `server.xml` → `config.d/akvorado.xml` (system-log TTLs).
+- `CLICKHOUSE_SKIP_USER_SETUP=1` (Akvorado default): `default` user, empty
+  password, full access — satisfies HyperDX's default connection.
+- ClickStack's `config.xml` / `users.xml` are **not** used (their reconciliation
+  is unnecessary under this design).
 
 ### Network
-- Single network adopting Akvorado's `default` config: IPv6 enabled, fixed
-  subnets, bridge name `br-akvorado`. All ClickStack services join it.
-- `ch-server` carries alias `clickhouse` on this network.
-- `akvorado-conntrack-fixer` keeps `network_mode: host` (unchanged).
+- Single network from Akvorado's `default`: IPv6 enabled, fixed subnets
+  (`247.16.14.0/24`, `fd1c:8ce3:6fb:1::/64`), bridge name `br-akvorado`.
+- All ClickStack services (`db`, `otel-collector`, `app`) join it.
+- `clickhouse` service carries alias `ch-server`.
+- `akvorado-conntrack-fixer` keeps `network_mode: host`.
 
 ### Ports (final host map)
 | Service | Port(s) | Change |
 |---|---|---|
-| HyperDX app | **8090** | moved from 8080 to avoid Traefik collision |
+| HyperDX app | **1800** | moved from 8080 |
 | HyperDX API | 8000 | unchanged |
 | HyperDX OPAMP | 4320 | unchanged |
 | otel-collector | 13133, 24225, 4317, 4318, 8888 | unchanged |
-| Akvorado Traefik | 127.0.0.1:8080, 8081 | unchanged (documented convention) |
+| Akvorado Traefik | 127.0.0.1:8080, 8081 | unchanged |
 | Akvorado inlet | 2055/udp, 4739/udp, 6343/udp | unchanged |
 | Akvorado outlet | 10179/tcp | unchanged |
 
-`HYPERDX_APP_PORT`, `HYPERDX_APP_URL`, and `FRONTEND_URL` updated for 8090.
+`HYPERDX_APP_PORT=1800`, `HYPERDX_APP_URL`, and `FRONTEND_URL` updated for 1800.
 
 ### Volumes
-- Keep ClickStack bind mounts: `.volumes/ch_data`, `.volumes/ch_logs`,
-  `.volumes/db`.
-- Keep Akvorado named volumes: `akvorado-kafka`, `akvorado-geoip`,
-  `akvorado-run`, `akvorado-console-db`.
-- Remove `akvorado-clickhouse` (shared ch uses `.volumes/ch_data`).
+- Re-attach existing Akvorado named volumes:
+  `akvorado_akvorado-clickhouse` (flow data), `akvorado_akvorado-kafka`,
+  `akvorado_akvorado-console-db`, `akvorado_akvorado-geoip`,
+  `akvorado_akvorado-run`.
+- Keep ClickStack bind mount for mongo: `.volumes/db`.
+- ClickStack's `.volumes/ch_data`, `.volumes/ch_logs` are no longer used.
 
 ### Environment / `.env`
-Merge both `.env` files into one root `.env`:
-- ClickStack image repo/version vars, HyperDX ports (APP port → 8090),
+Merge into one root `.env`:
+- ClickStack image repo/version vars; `HYPERDX_APP_PORT=1800` and matching URLs;
   `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default`.
-- Akvorado has minimal env; its multi-file `COMPOSE_FILE` chain is not carried
-  over (single authored compose replaces it). Akvorado image tag
-  (`ghcr.io/akvorado/akvorado:2.0.1`) and support images pinned inline.
+- Set `COMPOSE_PROJECT_NAME=akvorado` (re-attaches existing volumes).
+- Akvorado's multi-file `COMPOSE_FILE` chain is replaced by the single authored
+  compose. Akvorado image tag (`ghcr.io/akvorado/akvorado:2.0.1`) and support
+  images pinned inline.
 
 ## File layout (target)
 ```
 ClickStack/
   docker-compose.yml          # combined, authored, no `extends`
-  .env                        # merged
+  .env                        # merged; COMPOSE_PROJECT_NAME=akvorado
   config/akvorado/            # copied: akvorado.yaml, console.yaml, inlet.yaml,
                               #         outlet.yaml, demo.yaml
-  docker/clickhouse/local/    # existing config.xml, users.xml, init-db.sh
-  docker/clickhouse/akvorado-server.xml   # copied Akvorado server.xml (TTLs)
-  docker/akvorado/            # copied: geoip Dockerfile/script if IPinfo used
+  docker/clickhouse/akvorado/ # copied: observability.xml, server.xml
+  docker/akvorado/            # copied geoip Dockerfile/script (IPinfo)
 ```
+
+## Cutover procedure (operational)
+The combined stack reuses Akvorado's host ports and named volumes, so it cannot
+run alongside the existing `/home/terry/akvorado` deployment.
+1. `cd /home/terry/akvorado && docker compose down` (stops containers; **named
+   volumes are retained**, so flow data is preserved).
+2. `cd /home/terry/ClickStack && docker compose up -d` (project `akvorado`
+   re-attaches `akvorado_akvorado-clickhouse` etc.).
+3. Verify flow rows are intact (see Verification).
 
 ## Deferred / out of scope
 - Akvorado optional profiles: Prometheus, Loki, Grafana, demo exporters, TLS,
-  Maxmind geoip. Not carried into the core combined file (can be added later).
-- Putting HyperDX behind Akvorado's Traefik. HyperDX stays on its own host port.
-- Cross-querying flows from HyperDX beyond what the shared `default` database
-  makes available (HyperDX can add the flow tables as a source manually later).
-- Cluster/keeper ClickHouse (Akvorado's cluster compose). Standalone only.
+  Maxmind geoip. Not in the core combined file (addable later).
+- Putting HyperDX behind Akvorado's Traefik. HyperDX stays on host port 1800.
+- ClickHouse cluster/keeper (Akvorado cluster compose). Standalone only.
 
 ## Risks
-- **Version downgrade of ClickStack ch-server (26.1 → 25.8).** If existing
-  `.volumes/ch_data` was written by 26.1, ClickHouse may refuse to start on
-  25.8 (no downgrade of on-disk format). Mitigation: fresh `.volumes/ch_data`
-  for the combined stack, or verify current data dir version first.
-- **Akvorado migrations on shared instance.** Orchestrator must complete schema
-  creation against the shared ch before console/outlet become healthy.
-  Mitigation: keep `depends_on` health conditions; verify orchestrator logs.
-- **Prometheus endpoint overlap.** ClickStack exposes CH metrics on 9363;
-  Akvorado's Traefik `metrics.port=8123` label referenced its own clickhouse.
-  Low impact (metrics scraping only); note during verification.
+- **HyperDX access-management.** Akvorado's `SKIP_USER_SETUP` may leave
+  `access_management=0`. If HyperDX needs to run access-control SQL, add a small
+  `config.d` fragment enabling `<access_management>1</access_management>` for the
+  `default` user. Verify during bring-up.
+- **Volume re-attach depends on project name.** If `COMPOSE_PROJECT_NAME` is not
+  `akvorado` (or the volume isn't declared `external`), the stack creates empty
+  volumes and the flow data appears "lost" (it isn't — it stays in
+  `akvorado_akvorado-clickhouse`). Fix by correcting the project name/volume ref.
+- **Prometheus endpoint expectations.** Akvorado's Traefik `metrics.port=8123`
+  label targeted its clickhouse; unchanged here. Low impact.
+- **Both stacks running at once.** Would collide on ports/volumes — follow the
+  cutover procedure.
 
 ## Verification plan
 1. `docker compose config` parses without error.
-2. `docker compose up -d`; all services reach healthy/running.
-3. ClickHouse: `SHOW TABLES FROM default` shows both `otel_*` and Akvorado flow
-   tables; `SELECT 1` as `default` user succeeds.
-4. HyperDX UI reachable on `:8090`, connected to `ch-server`.
-5. Akvorado console reachable via Traefik `:8081`; ingest test flow to inlet
-   (2055/udp) and confirm rows land in the flow table.
-6. `git` diff review: only intended files added/changed.
+2. After cutover, all services reach healthy/running.
+3. ClickHouse: `SELECT count() FROM default.flows` still ≈ 38.4M (data preserved).
+4. `SHOW TABLES FROM default` shows Akvorado flow tables **and** new `otel_*`.
+5. HyperDX UI reachable on `:1800`, connected via `ch-server` alias.
+6. Akvorado console reachable via Traefik `:8081`; send a test flow to inlet
+   (2055/udp) and confirm new rows land in `default.flows`.
+7. `git` diff review: only intended files added/changed.
