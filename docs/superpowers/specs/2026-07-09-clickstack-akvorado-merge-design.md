@@ -118,7 +118,7 @@ existing service, now also aliased `ch-server`.
   ClickHouse and renders the receiver endpoints:
   `SELECT DISTINCT replaceRegexpOne(toString(ExporterAddress),'^::ffff:','')
    FROM default.exporters` → one SNMP endpoint per flow exporter (e.g.
-  `192.168.88.1`, name `CHANGEME`).
+  `192.168.88.1`).
 - The script reads `${SNMP_COMMUNITY}` from the gitignored secrets env and
   writes the gitignored `docker/otel/snmp-collector.yaml` from the committed
   `snmp-collector.example.yaml` template.
@@ -182,10 +182,10 @@ strings, device IPs, credentials, or site topology may be committed.
 - `config/secrets/snmp.env.example` — `SNMP_COMMUNITY=changeme`.
 
 **Gitignored (real values, present only on the host):**
-- `config/akvorado/*.yaml` (real `outlet.yaml` with community `CHANGEME`,
+- `config/akvorado/*.yaml` (real `outlet.yaml` with the SNMP community,
   `akvorado.yaml`, `inlet.yaml`, `console.yaml`, `demo.yaml`).
 - `docker/otel/snmp-collector.yaml` (generated; real device IPs).
-- `config/secrets/snmp.env` (`SNMP_COMMUNITY=CHANGEME`).
+- `config/secrets/snmp.env` (`SNMP_COMMUNITY=<real value>`).
 
 **`.gitignore` additions:**
 ```

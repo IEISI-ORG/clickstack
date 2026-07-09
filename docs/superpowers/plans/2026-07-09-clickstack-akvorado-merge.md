@@ -17,6 +17,7 @@
 - Preserve data: never `docker volume rm` or `docker compose down -v` on `akvorado_*` volumes.
 - Akvorado images pinned verbatim from `/home/terry/akvorado/docker/versions.yml`: kafka `apache/kafka:4.1.0`, redis `valkey/valkey:7.2`, akvorado `ghcr.io/akvorado/akvorado:2.0.1`, traefik `traefik:v3.6.1`, kafka-ui `ghcr.io/kafbat/kafka-ui:v1.3.0`, geoip `ghcr.io/akvorado/ipinfo-geoipupdate:latest`.
 - All work on branch `akvorado`. Commit after each task.
+- **No real secrets in tracked files — including these planning docs.** Use placeholders (`CHANGEME`, `<from …>`); verification steps read real values from the gitignored `config/secrets/secrets.env`. Historical commits that predated this rule are scrubbed in Task 7 Step 1 (`git filter-repo`) before any push.
 - **Restore flag:** any restore of this data MUST pass `--allow_suspicious_low_cardinality_types=1` (the `exporters` table uses `LowCardinality(IPv6)`, blocked on CREATE by default).
 
 ---
@@ -75,9 +76,14 @@ config/akvorado/*.yaml
 !config/akvorado/*.example.yaml
 docker/otel/snmp-collector.yaml
 docker/otel/snmp-extra-targets.txt
-config/secrets/
+config/secrets/*
 !config/secrets/*.example
 ```
+
+Note: `config/secrets/*` (not `config/secrets/`) — a directory-level ignore
+makes `!config/secrets/*.example` a no-op (git won't re-include a file whose
+parent dir is excluded). The `/*` form ignores the contents but keeps the dir
+traversable so the negation works.
 
 - [ ] **Step 2: Create the committed secrets template**
 
@@ -92,11 +98,16 @@ IPINFO_TOKEN=changeme
 
 - [ ] **Step 3: Create the real gitignored secrets file**
 
-Create `config/secrets/secrets.env` (NOT committed):
+Create `config/secrets/secrets.env` (NOT committed) using the REAL values from the
+running Akvorado deployment — do NOT hardcode secrets in this plan:
+- `SNMP_COMMUNITY` = the community in `/home/terry/akvorado/config/outlet.yaml`
+  (`metadata.providers[].credentials.*.communities`).
+- `IPINFO_TOKEN` = the token in `/home/terry/akvorado/docker/docker-compose-ipinfo.yml`
+  (`IPINFO_TOKEN:` under the `geoip` service).
 
 ```dotenv
-SNMP_COMMUNITY=CHANGEME
-IPINFO_TOKEN=CHANGEME
+SNMP_COMMUNITY=<from akvorado outlet.yaml>
+IPINFO_TOKEN=<from akvorado docker-compose-ipinfo.yml>
 ```
 
 - [ ] **Step 4: Verify the real secrets file is ignored, the example is not**
@@ -167,14 +178,16 @@ Generate them:
 ```bash
 for f in inlet console demo; do cp config/akvorado/$f.yaml config/akvorado/$f.example.yaml; done
 cp config/akvorado/akvorado.yaml config/akvorado/akvorado.example.yaml
-sed 's/"CHANGEME"/"CHANGEME"/' config/akvorado/outlet.yaml > config/akvorado/outlet.example.yaml
+COMMUNITY=$(grep -E '^SNMP_COMMUNITY=' config/secrets/secrets.env | cut -d= -f2-)
+sed "s/\"${COMMUNITY}\"/\"CHANGEME\"/" config/akvorado/outlet.yaml > config/akvorado/outlet.example.yaml
 ```
 
 - [ ] **Step 4: Verify no secret leaked into committed files**
 
 Run:
 ```bash
-grep -R "CHANGEME" config/akvorado/*.example.yaml docker/clickhouse/akvorado/ && echo "LEAK" || echo "CLEAN"
+COMMUNITY=$(grep -E '^SNMP_COMMUNITY=' config/secrets/secrets.env | cut -d= -f2-)
+grep -R "$COMMUNITY" config/akvorado/*.example.yaml docker/clickhouse/akvorado/ && echo "LEAK" || echo "CLEAN"
 git check-ignore config/akvorado/outlet.yaml && echo REAL_IGNORED
 ```
 Expected: `CLEAN` then `REAL_IGNORED`.
@@ -230,7 +243,9 @@ HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
 
 Run:
 ```bash
-grep -Ei "CHANGEME|IPINFO_TOKEN|SNMP_COMMUNITY" .env && echo "LEAK" || echo "CLEAN"
+SNMP=$(grep -E '^SNMP_COMMUNITY=' config/secrets/secrets.env | cut -d= -f2-)
+TOK=$(grep -E '^IPINFO_TOKEN=' config/secrets/secrets.env | cut -d= -f2-)
+grep -F -e "$SNMP" -e "$TOK" .env && echo "LEAK" || echo "CLEAN"
 ```
 Expected: `CLEAN`.
 
@@ -901,16 +916,37 @@ Expected: count > 0 within a couple of collection intervals. In the HyperDX UI (
 **Interfaces:**
 - Consumes: committed branch `akvorado`. Requires user go-ahead (forking is an outward action).
 
-- [ ] **Step 1: Final secret-safety audit before any push**
+- [ ] **Step 1: Scrub secrets from ALL branch history (one-time rewrite)**
+
+Earlier planning commits (`08bd280..91af871`) embedded the real community/token in
+the doc source before they were sanitized. Rewrite history so no pushed commit ever
+contained them. **Do this only here, at the end — never mid-execution — because it
+rewrites commit hashes.** Requires `git-filter-repo` (`pipx install git-filter-repo`).
 
 ```bash
+cd /home/terry/ClickStack
+SNMP=$(grep -E '^SNMP_COMMUNITY=' config/secrets/secrets.env | cut -d= -f2-)
+TOK=$(grep -E '^IPINFO_TOKEN=' config/secrets/secrets.env | cut -d= -f2-)
+printf '%s==>CHANGEME\n%s==>CHANGEME\n' "$SNMP" "$TOK" > /tmp/scrub.txt
+git filter-repo --replace-text /tmp/scrub.txt --force
+rm -f /tmp/scrub.txt
+```
+Note: `filter-repo` removes the `origin` remote by design; re-add it if needed
+(`git remote add origin git@github.com:ClickHouse/ClickStack.git`). `main` is an
+ancestor without the secrets, so it is unaffected.
+
+- [ ] **Step 2: Final secret-safety audit before any push**
+
+```bash
+SNMP=$(grep -E '^SNMP_COMMUNITY=' config/secrets/secrets.env | cut -d= -f2-)
+TOK=$(grep -E '^IPINFO_TOKEN=' config/secrets/secrets.env | cut -d= -f2-)
 git check-ignore config/akvorado/outlet.yaml docker/otel/snmp-collector.yaml config/secrets/secrets.env
 git ls-files | grep -E "config/akvorado/.*\.yaml$" | grep -v ".example.yaml$" && echo "LEAK_REAL_CONFIG" || echo "NO_REAL_CONFIG"
-git grep -nI "CHANGEME\|CHANGEME" $(git rev-list --all) -- . 2>/dev/null && echo "LEAK_IN_HISTORY" || echo "HISTORY_CLEAN"
+git grep -nI -e "$SNMP" -e "$TOK" $(git rev-list --all) -- . 2>/dev/null && echo "LEAK_IN_HISTORY" || echo "HISTORY_CLEAN"
 ```
 Expected: all three real paths print (ignored); `NO_REAL_CONFIG`; `HISTORY_CLEAN`. **Stop and remediate if any leak is reported.**
 
-- [ ] **Step 2: Create the fork (only after user confirms)**
+- [ ] **Step 3: Create the fork (only after user confirms)**
 
 ```bash
 gh repo fork ClickHouse/ClickStack --remote=false --clone=false
@@ -921,14 +957,14 @@ gh repo view --json owner -q .owner.login   # note your username
 git remote add fork git@github.com:<your-user>/ClickStack.git
 ```
 
-- [ ] **Step 3: Push the branch to the fork**
+- [ ] **Step 4: Push the branch to the fork**
 
 ```bash
 git push -u fork akvorado
 ```
 Expected: branch `akvorado` published to your fork.
 
-- [ ] **Step 4: Confirm the pushed tree contains no secrets**
+- [ ] **Step 5: Confirm the pushed tree contains no secrets**
 
 ```bash
 git ls-tree -r --name-only fork/akvorado | grep -E "secrets\.env$|outlet\.yaml$|snmp-collector\.yaml$" && echo "LEAK" || echo "REMOTE_CLEAN"
