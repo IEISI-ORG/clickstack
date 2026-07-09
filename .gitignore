@@ -75,3 +75,11 @@ docker-compose.prod.yml
 
 # NX
 .nx/
+
+# ClickStack+Akvorado merge: keep real config/secrets out of the public fork
+config/akvorado/*.yaml
+!config/akvorado/*.example.yaml
+docker/otel/snmp-collector.yaml
+docker/otel/snmp-extra-targets.txt
+config/secrets/
+!config/secrets/*.example
