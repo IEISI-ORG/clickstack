@@ -30,6 +30,12 @@ running Akvorado deployment.**
 4. **HyperDX app on host port 1800** (moved from 8080 to avoid Traefik).
 5. **Combined compose project name = `akvorado`** so it re-attaches the existing
    `akvorado_*` named volumes instead of creating empty ones.
+6. **SNMP metrics collector into HyperDX.** A dedicated `snmp-collector`
+   (`otel/opentelemetry-collector-contrib`) polls network devices via the OTEL
+   `snmpreceiver` and exports OTLP to the existing `otel-collector`, landing
+   interface/device metrics in the shared ClickHouse for display in HyperDX.
+   Distinct from Akvorado's SNMP, which polls only interface *metadata* to
+   enrich flows.
 
 ## Current runtime facts (verified 2026-07-09)
 
@@ -48,6 +54,9 @@ running Akvorado deployment.**
 
 ### Services
 From ClickStack: `db` (mongo:5.0.32-focal), `otel-collector`, `app` (HyperDX).
+
+New: `snmp-collector` (`otel/opentelemetry-collector-contrib`) — SNMP metrics
+poller exporting OTLP to `otel-collector` (see SNMP section).
 
 From Akvorado (images pinned inline from `versions.yml`): `kafka`
 (apache/kafka:4.1.0), `kafka-ui`, `redis` (valkey/valkey:7.2),
@@ -86,6 +95,25 @@ existing service, now also aliased `ch-server`.
   password, full access — satisfies HyperDX's default connection.
 - ClickStack's `config.xml` / `users.xml` are **not** used (their reconciliation
   is unnecessary under this design).
+
+### SNMP metrics collector
+- New service `snmp-collector`, image
+  `otel/opentelemetry-collector-contrib:<pinned>` (bundles `snmpreceiver`;
+  the HyperDX collector image is left untouched).
+- Config `docker/otel/snmp-collector.yaml`:
+  - `receivers.snmp` — per-device `endpoint: udp://<device-ip>:161`, SNMP
+    version + community (default v2c, community reused from Akvorado
+    `CHANGEME` or per-site), and metric definitions from IF-MIB
+    (`ifHCInOctets`, `ifHCOutOctets`, `ifInErrors`, `ifOutErrors`,
+    `ifOperStatus`, ...); optionally HOST-RESOURCES CPU/memory.
+  - `exporters.otlp` — `endpoint: otel-collector:4317`, `tls.insecure: true`.
+  - `service.pipelines.metrics` wiring snmp → otlp.
+- Data path: `snmp-collector → otel-collector → ClickHouse → HyperDX`.
+- **No host ports** — polling is outbound UDP/161 to devices. The container
+  needs network reachability to device management IPs; on the shared network it
+  can reach `otel-collector`.
+- Device targets/credentials are site-specific and supplied by the user; the
+  shipped config is a template with example targets.
 
 ### Network
 - Single network from Akvorado's `default`: IPv6 enabled, fixed subnets
@@ -133,6 +161,7 @@ ClickStack/
                               #         outlet.yaml, demo.yaml
   docker/clickhouse/akvorado/ # copied: observability.xml, server.xml
   docker/akvorado/            # copied geoip Dockerfile/script (IPinfo)
+  docker/otel/snmp-collector.yaml  # SNMP receiver -> OTLP config (template)
 ```
 
 ## Cutover procedure (operational)
@@ -147,6 +176,9 @@ run alongside the existing `/home/terry/akvorado` deployment.
 ## Deferred / out of scope
 - Akvorado optional profiles: Prometheus, Loki, Grafana, demo exporters, TLS,
   Maxmind geoip. Not in the core combined file (addable later).
+- SNMPv3 auth/priv and HOST-RESOURCES CPU/memory metrics beyond interface
+  counters (interface metrics ship first; these are easy follow-ons in the same
+  `snmp-collector.yaml`).
 - Putting HyperDX behind Akvorado's Traefik. HyperDX stays on host port 1800.
 - ClickHouse cluster/keeper (Akvorado cluster compose). Standalone only.
 
@@ -163,6 +195,11 @@ run alongside the existing `/home/terry/akvorado` deployment.
   label targeted its clickhouse; unchanged here. Low impact.
 - **Both stacks running at once.** Would collide on ports/volumes — follow the
   cutover procedure.
+- **OTEL `snmpreceiver` is alpha stability.** Config schema may change between
+  contrib releases; pin the image tag and re-verify on upgrade.
+- **SNMP device reachability / credentials.** `snmp-collector` must route to
+  device management IPs on UDP/161 with a valid community; wrong community or
+  unreachable targets yields no metrics (check collector logs).
 
 ## Verification plan
 1. `docker compose config` parses without error.
@@ -172,4 +209,7 @@ run alongside the existing `/home/terry/akvorado` deployment.
 5. HyperDX UI reachable on `:1800`, connected via `ch-server` alias.
 6. Akvorado console reachable via Traefik `:8081`; send a test flow to inlet
    (2055/udp) and confirm new rows land in `default.flows`.
-7. `git` diff review: only intended files added/changed.
+7. `snmp-collector` logs show successful polls; interface metrics
+   (e.g. `ifHCInOctets`) appear as a metric source in HyperDX for at least one
+   configured device.
+8. `git` diff review: only intended files added/changed.
