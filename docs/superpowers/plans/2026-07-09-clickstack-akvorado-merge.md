@@ -17,6 +17,23 @@
 - Preserve data: never `docker volume rm` or `docker compose down -v` on `akvorado_*` volumes.
 - Akvorado images pinned verbatim from `/home/terry/akvorado/docker/versions.yml`: kafka `apache/kafka:4.1.0`, redis `valkey/valkey:7.2`, akvorado `ghcr.io/akvorado/akvorado:2.0.1`, traefik `traefik:v3.6.1`, kafka-ui `ghcr.io/kafbat/kafka-ui:v1.3.0`, geoip `ghcr.io/akvorado/ipinfo-geoipupdate:latest`.
 - All work on branch `akvorado`. Commit after each task.
+- **Restore flag:** any restore of this data MUST pass `--allow_suspicious_low_cardinality_types=1` (the `exporters` table uses `LowCardinality(IPv6)`, blocked on CREATE by default).
+
+---
+
+## Task 0: Backup current Akvorado state — COMPLETED 2026-07-09
+
+Done before execution as a cutover safety net. Hot ClickHouse native `BACKUP`
+(no downtime), verified restorable (restored `default.exporters` → `RESTORED`).
+
+**Location:** `/home/terry/akvorado-backups/20260709-124313/`
+- `clickhouse-default-*.zip` (958 M) — full `default` DB (flows, rollups, exporters, dictionaries)
+- `console-db-*.tar.gz` — console SQLite volume
+- `akvorado-config-*.tar.gz` — `/home/terry/akvorado` {config, docker, .env}
+- `SHA256SUMS`, `RESTORE.md` (runbook, incl. the low-cardinality flag)
+
+This is the rollback source if Task 6 cutover goes wrong. Do not delete it until
+the combined stack is confirmed stable.
 
 ---
 
@@ -805,6 +822,10 @@ git commit -m "feat: SNMP collector template + generator (exporters table union 
 docker exec akvorado-clickhouse-1 clickhouse-client -q "SELECT count() FROM default.flows"
 ```
 Record the number (≈ 38,420,480 or higher).
+
+> **Rollback:** if anything below goes wrong, the verified backup from Task 0
+> (`/home/terry/akvorado-backups/20260709-124313/`) restores full state — see its
+> `RESTORE.md` (remember `--allow_suspicious_low_cardinality_types=1`).
 
 - [ ] **Step 2: Stop the old Akvorado stack (retain volumes)**
 
