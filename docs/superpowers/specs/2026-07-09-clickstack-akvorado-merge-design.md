@@ -2,7 +2,7 @@
 
 Date: 2026-07-09
 Branch: `akvorado` (fork of `ClickHouse/ClickStack`)
-Status: Design — awaiting review
+Status: Approved 2026-07-09
 
 ## Goal
 
