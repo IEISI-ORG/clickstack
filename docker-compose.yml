@@ -1,30 +1,31 @@
-name: clickstack
+name: akvorado
+
+networks:
+  default:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 247.16.14.0/24
+        - subnet: fd1c:8ce3:6fb:1::/64
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-akvorado
+
+volumes:
+  akvorado-kafka:
+  akvorado-geoip:
+  akvorado-clickhouse:
+  akvorado-run:
+  akvorado-console-db:
+
 services:
-  # ONLY USED FOR DEMO SSL SETUP
-  # nginx:
-  #   image: nginx:1.27.3
-  #   volumes:
-  #     - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
-  #     - ./docker/nginx/ssl:/etc/nginx/ssl
-  #     - .volumes/nginx_logs:/var/log/nginx
-  #   ports:
-  #     - 80:80
-  #     - 443:443
-  #   networks:
-  #     - internal
-  #   depends_on:
-  #     - app
+  # ===================== ClickStack / HyperDX =====================
   db:
     image: mongo:5.0.32-focal
+    restart: unless-stopped
     volumes:
       - .volumes/db:/data/db
-    # WARNING: Exposing the database port will make it accessible from outside the container,
-    # potentially allowing unauthorized access. If you uncomment the ports below,
-    # ensure to secure your database (e.g., with strong authentication, proper network rules, and firewalls).
-    # ports:
-    #   - 27017:27017
-    networks:
-      - internal
+
   otel-collector:
     image: ${CH_IMAGE_REPO}/${NEXT_OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB}:${IMAGE_VERSION}
     environment:
@@ -32,19 +33,17 @@ services:
       HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE: ${HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE}
       HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
       OPAMP_SERVER_URL: "http://app:${HYPERDX_OPAMP_PORT}"
-      # TODO: use new schema
       HYPERDX_OTEL_EXPORTER_CREATE_LEGACY_SCHEMA: "true"
     ports:
-      - "13133:13133" # health_check extension
-      - "24225:24225" # fluentd receiver
-      - "4317:4317" # OTLP gRPC receiver
-      - "4318:4318" # OTLP http receiver
-      - "8888:8888" # metrics extension
+      - "13133:13133"
+      - "24225:24225"
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
     restart: always
-    networks:
-      - internal
     depends_on:
-      - ch-server
+      - clickhouse
+
   app:
     image: ${HDX_IMAGE_REPO}/${IMAGE_NAME_DOCKERHUB}:${IMAGE_VERSION}
     ports:
@@ -72,29 +71,262 @@ services:
         ClickHouse","logSourceId":"Logs","sessionSourceId":"Sessions","metricSourceId":"Metrics"},{"from":{"databaseName":"default","tableName":""},"kind":"metric","timestampValueExpression":"TimeUnix","name":"Metrics","resourceAttributesExpression":"ResourceAttributes","metricTables":{"gauge":"otel_metrics_gauge","histogram":"otel_metrics_histogram","sum":"otel_metrics_sum","_id":"682586a8b1f81924e628e808","id":"682586a8b1f81924e628e808"},"connection":"Local
         ClickHouse","logSourceId":"Logs","traceSourceId":"Traces","sessionSourceId":"Sessions"},{"from":{"databaseName":"default","tableName":"hyperdx_sessions"},"kind":"session","timestampValueExpression":"TimestampTime","name":"Sessions","displayedTimestampValueExpression":"Timestamp","implicitColumnExpression":"Body","serviceNameExpression":"ServiceName","bodyExpression":"Body","eventAttributesExpression":"LogAttributes","resourceAttributesExpression":"ResourceAttributes","defaultTableSelectExpression":"Timestamp,ServiceName,SeverityText,Body","severityTextExpression":"SeverityText","traceIdExpression":"TraceId","spanIdExpression":"SpanId","connection":"Local
         ClickHouse","logSourceId":"Logs","traceSourceId":"Traces","metricSourceId":"Metrics"}]'
-    networks:
-      - internal
+    restart: unless-stopped
     depends_on:
-      - ch-server
+      - clickhouse
       - db
-  ch-server:
-    image: clickhouse/clickhouse-server:26.1-alpine
-    # WARNING: Exposing the database port will make it accessible from outside the container,
-    # potentially allowing unauthorized access. If you uncomment the ports below,
-    # ensure to secure your database (e.g., with strong authentication, proper network rules, and firewalls).
-    # ports:
-    #   - 8123:8123 # http api
-    #   - 9000:9000 # native
-    environment:
-      # default settings
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-    volumes:
-      - ./docker/clickhouse/local/config.xml:/etc/clickhouse-server/config.xml
-      - ./docker/clickhouse/local/users.xml:/etc/clickhouse-server/users.xml
-      - .volumes/ch_data:/var/lib/clickhouse
-      - .volumes/ch_logs:/var/log/clickhouse-server
-    restart: on-failure
+
+  # ===================== Shared ClickHouse (Akvorado's live 25.8) =====================
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    restart: unless-stopped
     networks:
-      - internal
-networks:
-  internal:
+      default:
+        aliases:
+          - ch-server
+    volumes:
+      - akvorado-clickhouse:/var/lib/clickhouse
+      - ./docker/clickhouse/akvorado/observability.xml:/etc/clickhouse-server/config.d/observability.xml
+      - ./docker/clickhouse/akvorado/server.xml:/etc/clickhouse-server/config.d/akvorado.xml
+    environment:
+      CLICKHOUSE_INIT_TIMEOUT: 60
+      CLICKHOUSE_SKIP_USER_SETUP: 1
+    cap_add:
+      - SYS_NICE
+    stop_grace_period: 30s
+    healthcheck:
+      interval: 20s
+      test: ["CMD", "wget", "-T", "1", "--spider", "--no-proxy", "http://127.0.0.1:8123/ping"]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.clickhouse.entrypoints=private
+      - traefik.http.routers.clickhouse.rule=PathPrefix(`/clickhouse`)
+      - traefik.http.routers.clickhouse.middlewares=clickhouse-strip
+      - traefik.http.middlewares.clickhouse-strip.stripprefix.prefixes=/clickhouse
+      - metrics.port=8123
+
+  # ===================== Akvorado =====================
+  kafka:
+    image: apache/kafka:4.1.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: CLIENT://:9092,CONTROLLER://:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CLIENT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: CLIENT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: CLIENT
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    restart: unless-stopped
+    volumes:
+      - akvorado-kafka:/var/lib/kafka/data
+    healthcheck:
+      interval: 20s
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--list", "--bootstrap-server", "kafka:9092"]
+
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.3.0
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_READONLY: true
+      SERVER_SERVLET_CONTEXT_PATH: /kafka-ui
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.kafka-ui.rule=PathPrefix(`/kafka-ui`)
+
+  redis:
+    image: valkey/valkey:7.2
+    restart: unless-stopped
+    healthcheck:
+      interval: 20s
+      test: ["CMD-SHELL", "timeout 3 redis-cli ping | grep -q PONG"]
+
+  akvorado-orchestrator:
+    image: ghcr.io/akvorado/akvorado:2.0.1
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: orchestrator /etc/akvorado/akvorado.yaml
+    volumes:
+      - ./config/akvorado:/etc/akvorado:ro
+      - akvorado-geoip:/usr/share/GeoIP:ro
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.akvorado-orchestrator-metrics.rule=PathPrefix(`/api/v0/orchestrator/metrics`)
+      - traefik.http.routers.akvorado-orchestrator-metrics.service=akvorado-orchestrator
+      - traefik.http.routers.akvorado-orchestrator-metrics.observability.accesslogs=false
+      - traefik.http.routers.akvorado-orchestrator.entrypoints=private
+      - traefik.http.routers.akvorado-orchestrator.rule=PathPrefix(`/api/v0/orchestrator`)
+      - traefik.http.services.akvorado-orchestrator.loadbalancer.server.port=8080
+      - metrics.port=8080
+      - metrics.path=/api/v0/metrics
+
+  akvorado-console:
+    image: ghcr.io/akvorado/akvorado:2.0.1
+    restart: unless-stopped
+    depends_on:
+      akvorado-orchestrator:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    command: console http://akvorado-orchestrator:8080
+    volumes:
+      - akvorado-console-db:/run/akvorado
+    environment:
+      AKVORADO_CFG_CONSOLE_DATABASE_DSN: /run/akvorado/console.sqlite
+      AKVORADO_CFG_CONSOLE_BRANDING: ${AKVORADO_CFG_CONSOLE_BRANDING-false}
+    healthcheck:
+      disable: ${CONSOLE_HEALTHCHECK_DISABLED-false}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.akvorado-console-debug.rule=PathPrefix(`/debug`)
+      - traefik.http.routers.akvorado-console-debug.entrypoints=private
+      - traefik.http.routers.akvorado-console-debug.service=akvorado-console
+      - traefik.http.routers.akvorado-console-metrics.rule=PathPrefix(`/api/v0/console/metrics`)
+      - traefik.http.routers.akvorado-console-metrics.service=akvorado-console
+      - traefik.http.routers.akvorado-console-metrics.observability.accesslogs=false
+      - "traefik.http.routers.akvorado-console.rule=!PathPrefix(`/debug`)"
+      - traefik.http.routers.akvorado-console.priority=1
+      - traefik.http.routers.akvorado-console.middlewares=console-auth
+      - traefik.http.services.akvorado-console.loadbalancer.server.port=8080
+      - traefik.http.middlewares.console-auth.headers.customrequestheaders.Remote-User=alfred
+      - traefik.http.middlewares.console-auth.headers.customrequestheaders.Remote-Name=Alfred Pennyworth
+      - traefik.http.middlewares.console-auth.headers.customrequestheaders.Remote-Email=alfred@example.com
+      - metrics.port=8080
+      - metrics.path=/api/v0/metrics
+
+  akvorado-inlet:
+    image: ghcr.io/akvorado/akvorado:2.0.1
+    ports:
+      - 2055:2055/udp
+      - 4739:4739/udp
+      - 6343:6343/udp
+    restart: unless-stopped
+    depends_on:
+      akvorado-orchestrator:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    command: inlet http://akvorado-orchestrator:8080
+    volumes:
+      - akvorado-run:/run/akvorado
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.akvorado-inlet-metrics.rule=PathPrefix(`/api/v0/inlet/metrics`)
+      - traefik.http.routers.akvorado-inlet-metrics.service=akvorado-inlet
+      - traefik.http.routers.akvorado-inlet-metrics.observability.accesslogs=false
+      - traefik.http.routers.akvorado-inlet.entrypoints=private
+      - traefik.http.routers.akvorado-inlet.rule=PathPrefix(`/api/v0/inlet`)
+      - traefik.http.services.akvorado-inlet.loadbalancer.server.port=8080
+      - akvorado.conntrack.fix=true
+      - metrics.port=8080
+      - metrics.path=/api/v0/metrics
+
+  akvorado-outlet:
+    image: ghcr.io/akvorado/akvorado:2.0.1
+    ports:
+      - 10179:10179/tcp
+    restart: unless-stopped
+    depends_on:
+      akvorado-orchestrator:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    command: outlet http://akvorado-orchestrator:8080
+    volumes:
+      - akvorado-run:/run/akvorado
+    environment:
+      AKVORADO_CFG_OUTLET_METADATA_CACHEPERSISTFILE: /run/akvorado/metadata.cache
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.akvorado-outlet-metrics.rule=PathPrefix(`/api/v0/outlet/metrics`)
+      - traefik.http.routers.akvorado-outlet-metrics.service=akvorado-outlet
+      - traefik.http.routers.akvorado-outlet-metrics.observability.accesslogs=false
+      - traefik.http.routers.akvorado-outlet.entrypoints=private
+      - traefik.http.routers.akvorado-outlet.rule=PathPrefix(`/api/v0/outlet`)
+      - traefik.http.services.akvorado-outlet.loadbalancer.server.port=8080
+      - metrics.port=8080
+      - metrics.path=/api/v0/metrics
+
+  akvorado-conntrack-fixer:
+    image: ghcr.io/akvorado/akvorado:2.0.1
+    cap_add:
+      - NET_ADMIN
+    command: conntrack-fixer
+    restart: unless-stopped
+    network_mode: host
+    healthcheck:
+      disable: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  traefik:
+    image: traefik:v3.6.1
+    restart: unless-stopped
+    environment:
+      TRAEFIK_API: "true"
+      TRAEFIK_API_BASEPATH: "/traefik"
+      TRAEFIK_METRICS_PROMETHEUS: "true"
+      TRAEFIK_METRICS_PROMETHEUS_MANUALROUTING: "true"
+      TRAEFIK_METRICS_PROMETHEUS_ADDROUTERSLABELS: "true"
+      TRAEFIK_PROVIDERS_DOCKER: "true"
+      TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT: "false"
+      TRAEFIK_ENTRYPOINTS_private_ADDRESS: ":8080"
+      TRAEFIK_ENTRYPOINTS_private_HTTP_MIDDLEWARES: compress@docker
+      TRAEFIK_ENTRYPOINTS_public_ADDRESS: ":8081"
+      TRAEFIK_ENTRYPOINTS_public_HTTP_MIDDLEWARES: compress@docker
+      TRAEFIK_ACCESSLOG: "true"
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.traefik.rule=PathPrefix(`/traefik`) && !PathPrefix(`/traefik/debug`)"
+      - traefik.http.routers.traefik.service=api@internal
+      - traefik.http.routers.traefik-metrics.rule=PathPrefix(`/traefik/metrics`)
+      - traefik.http.routers.traefik-metrics.priority=200
+      - traefik.http.routers.traefik-metrics.service=prometheus@internal
+      - traefik.http.middlewares.compress.compress=true
+    expose:
+      - 8080/tcp
+    ports:
+      - 127.0.0.1:8080:8080/tcp
+      - 8081:8081/tcp
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  geoip:
+    image: ghcr.io/akvorado/ipinfo-geoipupdate:latest
+    restart: unless-stopped
+    env_file:
+      - config/secrets/secrets.env
+    environment:
+      IPINFO_DATABASES: country asn
+      UPDATE_FREQUENCY: 48h
+    volumes:
+      - akvorado-geoip:/data
+
+  # ===================== SNMP metrics collector =====================
+  snmp-collector:
+    image: otel/opentelemetry-collector-contrib:0.119.0
+    restart: unless-stopped
+    env_file:
+      - config/secrets/secrets.env
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./docker/otel/snmp-collector.yaml:/etc/otelcol/config.yaml:ro
+    depends_on:
+      - otel-collector
