@@ -47,8 +47,11 @@ services:
   app:
     image: ${HDX_IMAGE_REPO}/${IMAGE_NAME_DOCKERHUB}:${IMAGE_VERSION}
     ports:
-      - ${HYPERDX_API_PORT}:${HYPERDX_API_PORT}
-      - ${HYPERDX_APP_PORT}:${HYPERDX_APP_PORT}
+      # Bind IPv4-only: this host's Docker IPv6 port-forwarding is broken, so a
+      # dual-stack publish makes `localhost` (::1) connect-then-reset instead of
+      # falling back to working IPv4.
+      - 0.0.0.0:${HYPERDX_API_PORT}:${HYPERDX_API_PORT}
+      - 0.0.0.0:${HYPERDX_APP_PORT}:${HYPERDX_APP_PORT}
     environment:
       FRONTEND_URL: ${HYPERDX_APP_URL}:${HYPERDX_APP_PORT}
       HYPERDX_API_KEY: ${HYPERDX_API_KEY}
