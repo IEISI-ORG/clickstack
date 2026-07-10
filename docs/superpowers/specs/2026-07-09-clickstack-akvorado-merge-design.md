@@ -32,7 +32,7 @@ running Akvorado deployment.**
    `akvorado_*` named volumes instead of creating empty ones.
 6. **SNMP metrics collector into HyperDX.** A dedicated `snmp-collector`
    (`otel/opentelemetry-collector-contrib`) polls network devices via the OTEL
-   `snmpreceiver` and exports OTLP to the existing `otel-collector`, landing
+   `snmpreceiver` and writes directly to the shared ClickHouse (contrib clickhouse exporter), landing
    interface/device metrics in the shared ClickHouse for display in HyperDX.
    Distinct from Akvorado's SNMP, which polls only interface *metadata* to
    enrich flows.
@@ -108,7 +108,7 @@ existing service, now also aliased `ch-server`.
     HOST-RESOURCES CPU/memory deferred.
   - `exporters.otlp` — `endpoint: otel-collector:4317`, `tls.insecure: true`.
   - `service.pipelines.metrics` wiring snmp → otlp.
-- Data path: `snmp-collector → otel-collector → ClickHouse → HyperDX`.
+- Data path: `snmp-collector → ClickHouse (default.otel_metrics_*) → HyperDX` (HyperDX OSS collector does not pipeline external OTLP, so direct export).
 - **No host ports** — polling is outbound UDP/161 to devices. The container
   needs network reachability to device management IPs; on the shared network it
   can reach `otel-collector`.

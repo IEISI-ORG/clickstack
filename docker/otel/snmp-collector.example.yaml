@@ -32,15 +32,21 @@ receivers:
 processors:
   batch: {}
 
+# HyperDX's OSS collector does not accept external OTLP (its otlp receiver is not
+# wired into any pipeline), so write straight to the shared ClickHouse using the
+# same clickhouse exporter HyperDX itself uses -> default.otel_metrics_* tables.
 exporters:
-  otlp:
-    endpoint: otel-collector:4317
-    tls:
-      insecure: true
+  clickhouse:
+    endpoint: tcp://ch-server:9000?dial_timeout=10s
+    database: default
+    username: default
+    password: ""
+    create_schema: true
+    ttl: 720h
 
 service:
   pipelines:
     metrics:
       receivers: [snmp/example]
       processors: [batch]
-      exporters: [otlp]
+      exporters: [clickhouse]
