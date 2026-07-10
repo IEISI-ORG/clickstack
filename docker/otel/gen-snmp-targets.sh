@@ -20,7 +20,7 @@ if [ -f "$EXTRA_FILE" ]; then
 fi
 
 # Union: dedup, stable sorted order.
-mapfile -t ADDRS < <(printf '%s\n' "${ADDRS[@]}" | sort -u)
+mapfile -t ADDRS < <(printf '%s\n' "${ADDRS[@]}" | sed '/^$/d' | sort -u)
 
 if [ "${#ADDRS[@]}" -eq 0 ]; then
   echo "No SNMP targets: default.exporters is empty and no $EXTRA_FILE provided." >&2
