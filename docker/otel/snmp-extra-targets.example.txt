@@ -1,0 +1,4 @@
+# Extra SNMP targets merged with devices discovered from default.exporters.
+# One IP per line; '#' starts a comment. Copy to snmp-extra-targets.txt (gitignored) and edit.
+# 10.0.0.2
+# 10.0.0.3
