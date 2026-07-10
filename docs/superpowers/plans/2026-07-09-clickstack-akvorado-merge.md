@@ -928,7 +928,13 @@ rewrites commit hashes.** Requires `git-filter-repo` (`pipx install git-filter-r
 cd /home/terry/ClickStack
 SNMP=$(grep -E '^SNMP_COMMUNITY=' config/secrets/secrets.env | cut -d= -f2-)
 TOK=$(grep -E '^IPINFO_TOKEN=' config/secrets/secrets.env | cut -d= -f2-)
-printf '%s==>CHANGEME\n%s==>CHANGEME\n' "$SNMP" "$TOK" > /tmp/scrub.txt
+# Also scrub the site domain (committed in .env at 1241770); user chose a
+# placeholder in the public fork. First placeholder the working .env domain back
+# to http://localhost (keep the real value only locally / gitignored override so
+# the live deployment still works), commit, THEN run this scrub.
+{ printf '%s==>CHANGEME\n' "$SNMP"
+  printf '%s==>CHANGEME\n' "$TOK"
+  printf 'hyperdx.example.com==>hyperdx.example.com\n'; } > /tmp/scrub.txt
 git filter-repo --replace-text /tmp/scrub.txt --force
 rm -f /tmp/scrub.txt
 ```
