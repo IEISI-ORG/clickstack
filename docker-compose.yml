@@ -335,13 +335,3 @@ services:
     depends_on:
       - clickhouse
 
-  snmp-collector:
-    image: otel/opentelemetry-collector-contrib:0.119.0
-    restart: unless-stopped
-    env_file:
-      - config/secrets/secrets.env
-    command: ["--config=/etc/otelcol/config.yaml"]
-    volumes:
-      - ./docker/otel/snmp-collector.yaml:/etc/otelcol/config.yaml:ro
-    depends_on:
-      - otel-collector
