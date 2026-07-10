@@ -27,7 +27,7 @@ running Akvorado deployment.**
    with all services inlined (images pinned directly, no `extends:` /
    `versions.yml`). Akvorado app config and ClickHouse fragments are copied into
    the ClickStack repo.
-4. **HyperDX app on host port 1800** (moved from 8080 to avoid Traefik).
+4. **HyperDX app on host port 1888** (moved from 8080 to avoid Traefik).
 5. **Combined compose project name = `akvorado`** so it re-attaches the existing
    `akvorado_*` named volumes instead of creating empty ones.
 6. **SNMP metrics collector into HyperDX.** A dedicated `snmp-collector`
@@ -142,7 +142,7 @@ existing service, now also aliased `ch-server`.
 ### Ports (final host map)
 | Service | Port(s) | Change |
 |---|---|---|
-| HyperDX app | **1800** | moved from 8080 |
+| HyperDX app | **1888** | moved from 8080 |
 | HyperDX API | 8000 | unchanged |
 | HyperDX OPAMP | 4320 | unchanged |
 | otel-collector | 13133, 24225, 4317, 4318, 8888 | unchanged |
@@ -150,7 +150,7 @@ existing service, now also aliased `ch-server`.
 | Akvorado inlet | 2055/udp, 4739/udp, 6343/udp | unchanged |
 | Akvorado outlet | 10179/tcp | unchanged |
 
-`HYPERDX_APP_PORT=1800`, `HYPERDX_APP_URL`, and `FRONTEND_URL` updated for 1800.
+`HYPERDX_APP_PORT=1888`, `HYPERDX_APP_URL`, and `FRONTEND_URL` updated for 1888.
 
 ### Volumes
 - Re-attach existing Akvorado named volumes:
@@ -162,7 +162,7 @@ existing service, now also aliased `ch-server`.
 
 ### Environment / `.env`
 Merge into one root `.env`:
-- ClickStack image repo/version vars; `HYPERDX_APP_PORT=1800` and matching URLs;
+- ClickStack image repo/version vars; `HYPERDX_APP_PORT=1888` and matching URLs;
   `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default`.
 - Set `COMPOSE_PROJECT_NAME=akvorado` (re-attaches existing volumes).
 - Akvorado's multi-file `COMPOSE_FILE` chain is replaced by the single authored
@@ -229,7 +229,7 @@ run alongside the existing `/home/terry/akvorado` deployment.
 - SNMPv3 auth/priv and HOST-RESOURCES CPU/memory metrics beyond interface
   counters (interface metrics ship first; these are easy follow-ons in the same
   `snmp-collector.yaml`).
-- Putting HyperDX behind Akvorado's Traefik. HyperDX stays on host port 1800.
+- Putting HyperDX behind Akvorado's Traefik. HyperDX stays on host port 1888.
 - ClickHouse cluster/keeper (Akvorado cluster compose). Standalone only.
 
 ## Risks
@@ -262,7 +262,7 @@ run alongside the existing `/home/terry/akvorado` deployment.
 2. After cutover, all services reach healthy/running.
 3. ClickHouse: `SELECT count() FROM default.flows` still ≈ 38.4M (data preserved).
 4. `SHOW TABLES FROM default` shows Akvorado flow tables **and** new `otel_*`.
-5. HyperDX UI reachable on `:1800`, connected via `ch-server` alias.
+5. HyperDX UI reachable on `:1888`, connected via `ch-server` alias.
 6. Akvorado console reachable via Traefik `:8081`; send a test flow to inlet
    (2055/udp) and confirm new rows land in `default.flows`.
 7. `gen-snmp-targets.sh` produces a `snmp-collector.yaml` listing the exporter

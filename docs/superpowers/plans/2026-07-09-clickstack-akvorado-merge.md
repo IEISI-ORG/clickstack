@@ -12,7 +12,7 @@
 
 - Shared ClickHouse image: `clickhouse/clickhouse-server:25.8` (Akvorado supports only 25.x LTS). Never bump to 26.x in this stack.
 - Compose project name: `akvorado` (set `COMPOSE_PROJECT_NAME=akvorado` in `.env`) — required so top-level volume `akvorado-clickhouse` maps to the existing `akvorado_akvorado-clickhouse`.
-- HyperDX app host port: `1800` (never 8080 — reserved by Traefik).
+- HyperDX app host port: `1888` (never 8080 — reserved by Traefik).
 - Public fork: no community strings, device IPs, IPinfo tokens, or site topology committed. Real files gitignored; only `*.example.*` committed.
 - Preserve data: never `docker volume rm` or `docker compose down -v` on `akvorado_*` volumes.
 - Akvorado images pinned verbatim from `/home/terry/akvorado/docker/versions.yml`: kafka `apache/kafka:4.1.0`, redis `valkey/valkey:7.2`, akvorado `ghcr.io/akvorado/akvorado:2.0.1`, traefik `traefik:v3.6.1`, kafka-ui `ghcr.io/kafbat/kafka-ui:v1.3.0`, geoip `ghcr.io/akvorado/ipinfo-geoipupdate:latest`.
@@ -208,7 +208,7 @@ git commit -m "chore: add sanitized akvorado config templates and CH fragments"
 - Modify: `.env` (overwrite with merged content)
 
 **Interfaces:**
-- Produces: compose-interpolation variables consumed by `docker-compose.yml` in Task 4 — notably `HYPERDX_APP_PORT=1800`, `COMPOSE_PROJECT_NAME=akvorado`, image repo/version vars.
+- Produces: compose-interpolation variables consumed by `docker-compose.yml` in Task 4 — notably `HYPERDX_APP_PORT=1888`, `COMPOSE_PROJECT_NAME=akvorado`, image repo/version vars.
 
 - [ ] **Step 1: Overwrite `.env` with merged, secret-free content**
 
@@ -227,9 +227,9 @@ OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB=hyperdx/hyperdx-otel-collector
 CODE_VERSION=2.19.0
 IMAGE_VERSION=2
 
-# ---- HyperDX ports/URLs (app moved 8080 -> 1800) ----
+# ---- HyperDX ports/URLs (app moved 8080 -> 1888) ----
 HYPERDX_API_PORT=8000
-HYPERDX_APP_PORT=1800
+HYPERDX_APP_PORT=1888
 HYPERDX_APP_URL=http://localhost
 HYPERDX_LOG_LEVEL=debug
 HYPERDX_OPAMP_PORT=4320
@@ -253,7 +253,7 @@ Expected: `CLEAN`.
 
 ```bash
 git add .env
-git commit -m "chore: merged .env for combined stack (project akvorado, app port 1800)"
+git commit -m "chore: merged .env for combined stack (project akvorado, app port 1888)"
 ```
 
 ---
@@ -629,7 +629,7 @@ Expected: `ALIAS_OK` and `VOL_OK` (the volume resolves to `akvorado_akvorado-cli
 
 ```bash
 git add docker-compose.yml
-git commit -m "feat: combined ClickStack+Akvorado docker-compose (shared ClickHouse, port 1800)"
+git commit -m "feat: combined ClickStack+Akvorado docker-compose (shared ClickHouse, port 1888)"
 ```
 
 ---
@@ -882,10 +882,10 @@ docker exec akvorado-clickhouse-1 clickhouse-client -q \
 ```
 Expected: `flows` present immediately; `otel_*` appear once HyperDX/otel-collector initialize (send a test OTLP log if needed).
 
-- [ ] **Step 7: Verify HyperDX reachable on 1800 and Akvorado console on 8081**
+- [ ] **Step 7: Verify HyperDX reachable on 1888 and Akvorado console on 8081**
 
 ```bash
-curl -sf -o /dev/null -w "hyperdx:%{http_code}\n" http://localhost:1800/
+curl -sf -o /dev/null -w "hyperdx:%{http_code}\n" http://localhost:1888/
 curl -sf -o /dev/null -w "console:%{http_code}\n" http://localhost:8081/
 ```
 Expected: HTTP `200` (or `3xx` redirect) for both.
@@ -906,7 +906,7 @@ Expected: logs show SNMP scrape of `192.168.88.1` without auth/timeout errors. W
 docker exec akvorado-clickhouse-1 clickhouse-client -q \
   "SELECT count() FROM default.otel_metrics_sum WHERE MetricName LIKE 'snmp.interface%'"
 ```
-Expected: count > 0 within a couple of collection intervals. In the HyperDX UI (`:1800`) the `snmp.interface.in.octets` metric is queryable.
+Expected: count > 0 within a couple of collection intervals. In the HyperDX UI (`:1888`) the `snmp.interface.in.octets` metric is queryable.
 
 ---
 
@@ -981,7 +981,7 @@ Expected: `REMOTE_CLEAN` (only `.example` variants exist on the remote).
 - ClickHouse 25.8 → Global Constraints + Task 4 image. ✅
 - Single authored compose, no `extends` → Task 4. ✅
 - Project name `akvorado` / volume re-attach → Task 3 (.env) + Task 4 Step 4. ✅
-- HyperDX port 1800 → Task 3 + Task 4 (app) + Task 6 Step 7. ✅
+- HyperDX port 1888 → Task 3 + Task 4 (app) + Task 6 Step 7. ✅
 - SNMP collector via otelcol-contrib → Task 4 (service) + Task 5 (config). ✅
 - SNMP targets from `default.exporters` → Task 5 generator. ✅
 - Community reuse via runtime env, no secret in files → Task 1 + Task 5. ✅
