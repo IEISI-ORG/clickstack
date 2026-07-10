@@ -27,20 +27,15 @@ services:
       - .volumes/db:/data/db
 
   otel-collector:
-    image: ${CH_IMAGE_REPO}/${NEXT_OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB}:${IMAGE_VERSION}
-    environment:
-      CLICKHOUSE_ENDPOINT: "tcp://ch-server:9000?dial_timeout=10s"
-      HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE: ${HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE}
-      HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
-      OPAMP_SERVER_URL: "http://app:${HYPERDX_OPAMP_PORT}"
-      HYPERDX_OTEL_EXPORTER_CREATE_LEGACY_SCHEMA: "true"
+    image: otel/opentelemetry-collector-contrib:0.119.0
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./docker/otel/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     ports:
-      - "13133:13133"
-      - "24225:24225"
       - "4317:4317"
       - "4318:4318"
-      - "8888:8888"
-    restart: always
+      - "13133:13133"
     depends_on:
       - clickhouse
 
