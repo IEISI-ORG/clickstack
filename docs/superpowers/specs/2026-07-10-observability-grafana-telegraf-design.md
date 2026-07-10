@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 Branch: `akvorado`
-Status: Design — awaiting review
+Status: Approved 2026-07-10
 Supersedes: the SNMP + HyperDX portions of `2026-07-09-clickstack-akvorado-merge-design.md`
 (shared ClickHouse, Akvorado stack, data preservation still hold).
 
