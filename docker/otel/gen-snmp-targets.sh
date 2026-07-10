@@ -38,22 +38,28 @@ fi
     endpoint: udp://${ip}:161
     version: v2c
     community: \${env:SNMP_COMMUNITY}
-    resource_attributes:
+    attributes:
       snmp.interface.index:
         oid: "1.3.6.1.2.1.2.2.1.1"
+      snmp.interface.name:
+        oid: "1.3.6.1.2.1.31.1.1.1.1"
     metrics:
       snmp.interface.in.octets:
         unit: By
         sum: {aggregation: cumulative, monotonic: true, value_type: int}
         column_oids:
           - oid: "1.3.6.1.2.1.31.1.1.1.6"
-            resource_attributes: [snmp.interface.index]
+            attributes:
+              - name: snmp.interface.index
+              - name: snmp.interface.name
       snmp.interface.out.octets:
         unit: By
         sum: {aggregation: cumulative, monotonic: true, value_type: int}
         column_oids:
           - oid: "1.3.6.1.2.1.31.1.1.1.10"
-            resource_attributes: [snmp.interface.index]
+            attributes:
+              - name: snmp.interface.index
+              - name: snmp.interface.name
 YAML
   done
   echo "processors:"
