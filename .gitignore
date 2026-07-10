@@ -81,5 +81,6 @@ config/akvorado/*.yaml
 !config/akvorado/*.example.yaml
 docker/otel/snmp-collector.yaml
 docker/otel/snmp-extra-targets.txt
+docker/telegraf/telegraf.d/agents.conf
 config/secrets/*
 !config/secrets/*.example
