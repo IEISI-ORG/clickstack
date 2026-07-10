@@ -17,6 +17,7 @@ volumes:
   akvorado-clickhouse:
   akvorado-run:
   akvorado-console-db:
+  grafana-data:
 
 services:
   # ===================== ClickStack / HyperDX =====================
@@ -318,6 +319,25 @@ services:
       - akvorado-geoip:/data
 
   # ===================== SNMP metrics collector =====================
+  grafana:
+    image: grafana/grafana-oss:11.3.1
+    restart: unless-stopped
+    env_file:
+      - config/secrets/secrets.env
+    environment:
+      GF_SERVER_ROOT_URL: https://grafana.example.com
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      GF_SECURITY_ADMIN_USER: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - 127.0.0.1:3000:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - clickhouse
+
   telegraf:
     image: telegraf:1.32-alpine
     restart: unless-stopped

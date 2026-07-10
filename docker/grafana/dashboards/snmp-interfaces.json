@@ -1,0 +1,46 @@
+{
+  "uid": "snmp-interfaces",
+  "title": "SNMP Interfaces",
+  "tags": ["snmp", "telegraf"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Interface in-octets (counter) by interface",
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never"}, "unit": "bytes"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(time) AS time, ifName, max(ifHCInOctets) AS in_octets FROM default.snmp WHERE $__timeFilter(time) GROUP BY time, ifName ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Interface out-octets (counter) by interface",
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 9},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never"}, "unit": "bytes"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(time) AS time, ifName, max(ifHCOutOctets) AS out_octets FROM default.snmp WHERE $__timeFilter(time) GROUP BY time, ifName ORDER BY time"
+        }
+      ]
+    }
+  ]
+}
