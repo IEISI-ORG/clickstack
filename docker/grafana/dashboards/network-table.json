@@ -30,7 +30,7 @@
           "editorType": "sql",
           "queryType": "table",
           "format": 1,
-          "rawSql": "SELECT source AS Device, ifName AS Interface, argMax(ifAlias, time) AS Description, argMax(ifHCInOctets, time) AS `Bytes In`, argMax(ifHCOutOctets, time) AS `Bytes Out` FROM default.snmp WHERE $__timeFilter(time) GROUP BY source, ifName HAVING argMax(ifOperStatus, time) = 1 ORDER BY source, ifName"
+          "rawSql": "SELECT source AS Device, ifName AS Interface, argMax(ifAlias, time) AS Description, max(ifHCInOctets) - min(ifHCInOctets) AS `Bytes In`, max(ifHCOutOctets) - min(ifHCOutOctets) AS `Bytes Out` FROM default.snmp WHERE $__timeFilter(time) GROUP BY source, ifName HAVING argMax(ifOperStatus, time) = 1 ORDER BY `Bytes In` DESC"
         }
       ]
     }
