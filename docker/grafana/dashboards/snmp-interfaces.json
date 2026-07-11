@@ -4,41 +4,73 @@
   "tags": ["snmp", "telegraf"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "1m",
   "time": {"from": "now-6h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "source",
+        "label": "Device",
+        "type": "query",
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+        "query": {"refId": "source", "rawSql": "SELECT DISTINCT source FROM default.snmp ORDER BY source"},
+        "multi": true,
+        "includeAll": true,
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
       "type": "timeseries",
-      "title": "Interface in-octets (counter) by interface",
-      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 0},
+      "title": "Interface inbound (bps) — by device / interface",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
       "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
-      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never"}, "unit": "bytes"}, "overrides": []},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never"}, "unit": "bps"}, "overrides": []},
       "targets": [
         {
           "refId": "A",
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT $__timeInterval(time) AS time, ifName, max(ifHCInOctets) AS in_octets FROM default.snmp WHERE $__timeFilter(time) GROUP BY time, ifName ORDER BY time"
+          "rawSql": "SELECT $__timeInterval(time) AS time, concat(source, ' / ', ifName) AS iface, (max(ifHCInOctets) - min(ifHCInOctets)) * 8 / greatest(dateDiff('second', min(time), max(time)), 1) AS in_bps FROM default.snmp WHERE $__timeFilter(time) AND source IN (${source:singlequote}) GROUP BY time, iface ORDER BY time"
         }
       ]
     },
     {
       "id": 2,
       "type": "timeseries",
-      "title": "Interface out-octets (counter) by interface",
-      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 9},
+      "title": "Interface outbound (bps) — by device / interface",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 10},
       "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
-      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never"}, "unit": "bytes"}, "overrides": []},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never"}, "unit": "bps"}, "overrides": []},
       "targets": [
         {
           "refId": "A",
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT $__timeInterval(time) AS time, ifName, max(ifHCOutOctets) AS out_octets FROM default.snmp WHERE $__timeFilter(time) GROUP BY time, ifName ORDER BY time"
+          "rawSql": "SELECT $__timeInterval(time) AS time, concat(source, ' / ', ifName) AS iface, (max(ifHCOutOctets) - min(ifHCOutOctets)) * 8 / greatest(dateDiff('second', min(time), max(time)), 1) AS out_bps FROM default.snmp WHERE $__timeFilter(time) AND source IN (${source:singlequote}) GROUP BY time, iface ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Interface operational status (1=up, 2=down)",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 20},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "always", "lineInterpolation": "stepAfter"}, "unit": "short", "min": 0, "max": 3}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(time) AS time, concat(source, ' / ', ifName) AS iface, max(ifOperStatus) AS status FROM default.snmp WHERE $__timeFilter(time) AND source IN (${source:singlequote}) GROUP BY time, iface ORDER BY time"
         }
       ]
     }
