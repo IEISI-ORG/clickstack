@@ -9,7 +9,9 @@ A self-hosted network-observability stack that unifies **flow analytics** and
 - **SNMP** — interface counters polled by [Telegraf](https://github.com/influxdata/telegraf)
   (`inputs.snmp`) straight into ClickHouse. gNMI-ready for future streaming telemetry.
 - **Metrics/OTLP** — a standalone OpenTelemetry Collector accepts OTLP (4317/4318) for
-  any app logs/traces/metrics you want alongside the network data.
+  any app logs/traces/metrics you want alongside the network data. To collect the
+  **host's own** CPU/mem/disk/net, run a native collector on the host — see
+  [docs/host-metrics.md](./docs/host-metrics.md).
 - **Visualize** — Grafana (ClickHouse datasource) for custom dashboards; the Akvorado
   console for interactive flow exploration.
 
