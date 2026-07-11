@@ -24,15 +24,25 @@ host: otelcol-contrib (hostmetrics) --OTLP--> localhost:4317
 
 ## 1. Install (Debian/Ubuntu)
 
-Match the version to the in-stack collector (`docker-compose.yml` pins
-`otel/opentelemetry-collector-contrib:0.119.0`) to avoid metric-schema drift:
+Install an OpenTelemetry Collector distribution that includes the **`hostmetrics`**
+receiver (the `-contrib` build, or any distro package built from it):
 
 ```bash
-VER=0.119.0
+VER=0.119.0   # any recent version is fine — see the version note below
 curl -fsSLo /tmp/otelcol-contrib.deb \
   "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${VER}/otelcol-contrib_${VER}_linux_amd64.deb"
-sudo dpkg -i /tmp/otelcol-contrib.deb   # installs the binary + a systemd unit: otelcol-contrib
+sudo dpkg -i /tmp/otelcol-contrib.deb
 ```
+
+The package name, systemd unit, and config path vary by distribution — commonly
+**`otelcol-contrib`** → `/etc/otelcol-contrib/config.yaml`, or **`otelcol`** →
+`/etc/otelcol/config.yaml`. Check with `systemctl cat <unit>` (look at `ExecStart`
+/ `--config`). Confirm your build has the receiver/processors you need:
+`otelcol components | grep -E 'hostmetrics|resource'`.
+
+**Version note:** the host collector only *forwards* OTLP — it does not write to
+ClickHouse — so its version does **not** need to match the container collector
+(OTLP is stable across versions; the container's exporter owns the ClickHouse schema).
 
 ## 2. Configure — `/etc/otelcol-contrib/config.yaml`
 
@@ -52,10 +62,14 @@ receivers:
       processes: {}
 
 processors:
-  resourcedetection:
-    detectors: [system]
-    system:
-      hostname_sources: [os]
+  # Label metrics with the host name. The built-in `resource` processor works in
+  # every build; contrib builds also offer `resourcedetection` (detectors: [system])
+  # to fill host.name automatically.
+  resource:
+    attributes:
+      - key: host.name
+        value: my-host          # set to this host's name
+        action: upsert
   batch: {}
 
 exporters:
@@ -66,15 +80,23 @@ exporters:
       insecure: true
 
 service:
+  # No listening receivers/extensions and self-metrics disabled -> this collector
+  # opens NO ports, so it can't clash with the container's published 4317/4318/13133.
+  telemetry:
+    metrics:
+      level: none
   pipelines:
     metrics:
       receivers: [hostmetrics]
-      processors: [resourcedetection, batch]
+      processors: [resource, batch]
       exporters: [otlp]
-  telemetry:
-    logs:
-      level: info
 ```
+
+> **Port-clash warning:** the distro's *default* config usually enables OTLP/jaeger/
+> zipkin receivers on `0.0.0.0:4317/4318/...`, which collide with the container
+> collector and leave the service `failed`. Replace it entirely with the config above
+> (hostmetrics in, OTLP out, nothing listening). Verify: `ss -ltnp | grep otelcol`
+> should return nothing.
 
 Start and enable it:
 
@@ -145,5 +167,6 @@ The `host.name` resource attribute (from `resourcedetection`) is in
 - **Security:** `otel-collector`'s `4317`/`4318` are published on `0.0.0.0`. If you
   onboard remote senders, front them with TLS/auth or restrict the published bind to
   the loopback / a firewall.
-- **Version pinning** keeps the host collector's metric schema aligned with the
-  container collector's ClickHouse tables.
+- **No port clash by design:** this config has no listening receivers/extensions and
+  disables self-metrics, so it coexists with the container collector. The container
+  keeps owning `4317`/`4318`; the host collector only makes an outbound OTLP connection.
