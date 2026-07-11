@@ -17,8 +17,8 @@ that points at it — every query below runs against that datasource.
 | `otel_logs` / `otel_traces` | otel-collector | MergeTree | OTLP logs/traces (empty unless apps send them). |
 | `asns`, `networks`, `protocols`, `tcp`, `udp`, `icmp` | Akvorado | Dictionary | Enrichment lookups (e.g. `dictGet('protocols', 'name', Proto)`). |
 
-> **Prefer the Akvorado console** (`https://akvorado.ieisi.org`) for interactive flow
-> exploration — it's purpose-built. Use Grafana/ClickHouse when you want custom
+> **Prefer the Akvorado console** (Traefik `:8081`, or your tunnel hostname) for
+> interactive flow exploration — it's purpose-built. Use Grafana/ClickHouse when you want custom
 > panels, to join flows with SNMP, or to build alerting.
 
 ## `flows` — network flow records
