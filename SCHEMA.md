@@ -84,19 +84,23 @@ For a dashboard spanning days, query `flows_1h0m0s`; for hours, `flows_5m0s`. Sa
 Columns: `time` (DateTime), `source` (agent IP, tag), `ifName` (tag, e.g. `ether1`),
 `ifIndex` (tag), `ifHCInOctets` / `ifHCOutOctets` (UInt64 **counters**),
 `ifInErrors` / `ifOutErrors` (UInt64 counters), `ifOperStatus` (Int64; 1=up, 2=down).
+`ifAlias` (String) is the interface description / RouterOS comment (e.g. "TRANSIT: NBN", "Internet Gateway") — added as an SNMP tag; use `argMax(ifAlias, time)` to get the current value.
 
 Octet columns are **monotonic counters** — compute a rate (delta ÷ time) for bandwidth.
 
 ### Example: per-interface inbound bitrate (bps)
+Use a window-function delta between consecutive polls — NOT `(max-min)` per
+`$__timeInterval` bucket, which returns 0 (a flat line) whenever a bucket holds a
+single poll (SNMP is polled every 60s):
 ```sql
-SELECT $__timeInterval(time) AS time,
-       ifName,
-       (max(ifHCInOctets) - min(ifHCInOctets)) * 8
-         / greatest(dateDiff('second', min(time), max(time)), 1) AS in_bps
-FROM default.snmp
-WHERE $__timeFilter(time)
-GROUP BY time, ifName
-ORDER BY time
+SELECT time, iface, in_bps FROM (
+  SELECT time, concat(source, ' / ', ifName) AS iface,
+    (ifHCInOctets - lagInFrame(ifHCInOctets) OVER (PARTITION BY source, ifName ORDER BY time))
+      / greatest(toUnixTimestamp(time) - toUnixTimestamp(lagInFrame(time)
+        OVER (PARTITION BY source, ifName ORDER BY time)), 1) * 8 AS in_bps
+  FROM default.snmp
+  WHERE $__timeFilter(time)
+) WHERE in_bps >= 0 ORDER BY time
 ```
 
 ### Example: interface up/down status

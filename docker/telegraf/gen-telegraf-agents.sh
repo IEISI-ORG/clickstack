@@ -46,6 +46,10 @@ cat > "$OUT" <<EOF
       name = "ifName"
       is_tag = true
     [[inputs.snmp.table.field]]
+      oid = "1.3.6.1.2.1.31.1.1.1.18"
+      name = "ifAlias"
+      is_tag = true
+    [[inputs.snmp.table.field]]
       oid = "1.3.6.1.2.1.2.2.1.1"
       name = "ifIndex"
       is_tag = true

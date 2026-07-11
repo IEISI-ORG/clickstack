@@ -1,0 +1,47 @@
+{
+  "uid": "internet-traffic",
+  "title": "Internet Traffic",
+  "tags": ["snmp", "internet", "wan"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-24h", "to": "now"},
+  "description": "Uplink/WAN interfaces, identified by their SNMP comment (ifAlias matching transit/internet/gateway/wan).",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Internet inbound / download (bps)",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never", "fillOpacity": 10}, "unit": "bps"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "rawSql": "SELECT time, label, in_bps FROM (SELECT time, ifAlias AS label, (ifHCInOctets - lagInFrame(ifHCInOctets) OVER (PARTITION BY source, ifName ORDER BY time)) / greatest(toUnixTimestamp(time) - toUnixTimestamp(lagInFrame(time) OVER (PARTITION BY source, ifName ORDER BY time)), 1) * 8 AS in_bps FROM default.snmp WHERE $__timeFilter(time) AND (ifAlias ILIKE '%transit%' OR ifAlias ILIKE '%internet%' OR ifAlias ILIKE '%gateway%' OR ifAlias ILIKE '%wan%')) WHERE in_bps >= 0 ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Internet outbound / upload (bps)",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 10},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never", "fillOpacity": 10}, "unit": "bps"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "rawSql": "SELECT time, label, out_bps FROM (SELECT time, ifAlias AS label, (ifHCOutOctets - lagInFrame(ifHCOutOctets) OVER (PARTITION BY source, ifName ORDER BY time)) / greatest(toUnixTimestamp(time) - toUnixTimestamp(lagInFrame(time) OVER (PARTITION BY source, ifName ORDER BY time)), 1) * 8 AS out_bps FROM default.snmp WHERE $__timeFilter(time) AND (ifAlias ILIKE '%transit%' OR ifAlias ILIKE '%internet%' OR ifAlias ILIKE '%gateway%' OR ifAlias ILIKE '%wan%')) WHERE out_bps >= 0 ORDER BY time"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "uid": "network-table",
+  "title": "Network Table",
+  "tags": ["snmp", "inventory"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-15m", "to": "now"},
+  "description": "Live table of active (operationally up) interfaces with SNMP descriptions and total bytes in/out.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Active interfaces (live)",
+      "gridPos": {"h": 22, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Bytes In"}, "properties": [{"id": "unit", "value": "decbytes"}]},
+          {"matcher": {"id": "byName", "options": "Bytes Out"}, "properties": [{"id": "unit", "value": "decbytes"}]}
+        ]
+      },
+      "options": {"showHeader": true, "sortBy": [{"displayName": "Bytes In", "desc": true}]},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "table",
+          "format": 1,
+          "rawSql": "SELECT source AS Device, ifName AS Interface, argMax(ifAlias, time) AS Description, argMax(ifHCInOctets, time) AS `Bytes In`, argMax(ifHCOutOctets, time) AS `Bytes Out` FROM default.snmp WHERE $__timeFilter(time) GROUP BY source, ifName HAVING argMax(ifOperStatus, time) = 1 ORDER BY source, ifName"
+        }
+      ]
+    }
+  ]
+}

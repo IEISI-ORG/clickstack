@@ -4,7 +4,7 @@
   "tags": ["host", "otel"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {"from": "now-6h", "to": "now"},
   "panels": [
@@ -55,7 +55,7 @@
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(Attributes['device'],' ',Attributes['direction']) AS series, (max(Value)-min(Value)) / greatest(dateDiff('second', min(TimeUnix), max(TimeUnix)), 1) AS bps FROM default.otel_metrics_sum WHERE MetricName='system.disk.io' AND $__timeFilter(TimeUnix) GROUP BY time, series ORDER BY time"
+          "rawSql": "SELECT TimeUnix AS time, series, bps FROM (SELECT TimeUnix, concat(Attributes['device'],' ',Attributes['direction']) AS series, (Value - lagInFrame(Value) OVER (PARTITION BY Attributes['device'], Attributes['direction'] ORDER BY TimeUnix)) / greatest(toUnixTimestamp(TimeUnix) - toUnixTimestamp(lagInFrame(TimeUnix) OVER (PARTITION BY Attributes['device'], Attributes['direction'] ORDER BY TimeUnix)), 1) AS bps FROM default.otel_metrics_sum WHERE MetricName='system.disk.io' AND $__timeFilter(TimeUnix)) WHERE bps >= 0 ORDER BY time"
         }
       ]
     },
@@ -72,7 +72,7 @@
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(Attributes['device'],' ',Attributes['direction']) AS series, (max(Value)-min(Value)) / greatest(dateDiff('second', min(TimeUnix), max(TimeUnix)), 1) AS bps FROM default.otel_metrics_sum WHERE MetricName='system.network.io' AND $__timeFilter(TimeUnix) GROUP BY time, series ORDER BY time"
+          "rawSql": "SELECT TimeUnix AS time, series, bps FROM (SELECT TimeUnix, concat(Attributes['device'],' ',Attributes['direction']) AS series, (Value - lagInFrame(Value) OVER (PARTITION BY Attributes['device'], Attributes['direction'] ORDER BY TimeUnix)) / greatest(toUnixTimestamp(TimeUnix) - toUnixTimestamp(lagInFrame(TimeUnix) OVER (PARTITION BY Attributes['device'], Attributes['direction'] ORDER BY TimeUnix)), 1) AS bps FROM default.otel_metrics_sum WHERE MetricName='system.network.io' AND $__timeFilter(TimeUnix)) WHERE bps >= 0 ORDER BY time"
         }
       ]
     },
