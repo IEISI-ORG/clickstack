@@ -1,0 +1,97 @@
+{
+  "uid": "host-metrics",
+  "title": "Host Metrics",
+  "tags": ["host", "otel"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "CPU load average",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never"}, "unit": "short"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, replaceOne(MetricName,'system.cpu.load_average.','') AS load, avg(Value) AS value FROM default.otel_metrics_gauge WHERE MetricName IN ('system.cpu.load_average.1m','system.cpu.load_average.5m','system.cpu.load_average.15m') AND $__timeFilter(TimeUnix) GROUP BY time, load ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Memory usage by state",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never", "stacking": {"mode": "normal"}}, "unit": "decbytes"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, Attributes['state'] AS state, avg(Value) AS bytes FROM default.otel_metrics_sum WHERE MetricName='system.memory.usage' AND $__timeFilter(TimeUnix) GROUP BY time, state ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Disk I/O (bytes/s) by device + direction",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never"}, "unit": "Bps"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(Attributes['device'],' ',Attributes['direction']) AS series, (max(Value)-min(Value)) / greatest(dateDiff('second', min(TimeUnix), max(TimeUnix)), 1) AS bps FROM default.otel_metrics_sum WHERE MetricName='system.disk.io' AND $__timeFilter(TimeUnix) GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Network I/O (bytes/s) by interface + direction",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never"}, "unit": "Bps"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(Attributes['device'],' ',Attributes['direction']) AS series, (max(Value)-min(Value)) / greatest(dateDiff('second', min(TimeUnix), max(TimeUnix)), 1) AS bps FROM default.otel_metrics_sum WHERE MetricName='system.network.io' AND $__timeFilter(TimeUnix) GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Filesystem used (bytes) by mountpoint",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "showPoints": "never"}, "unit": "decbytes"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+          "editorType": "sql",
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, Attributes['mountpoint'] AS mount, avg(Value) AS used_bytes FROM default.otel_metrics_sum WHERE MetricName='system.filesystem.usage' AND Attributes['state']='used' AND $__timeFilter(TimeUnix) GROUP BY time, mount ORDER BY time"
+        }
+      ]
+    }
+  ]
+}
