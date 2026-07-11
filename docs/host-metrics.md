@@ -158,15 +158,97 @@ GROUP BY time, state ORDER BY time
 The `host.name` resource attribute (from `resourcedetection`) is in
 `ResourceAttributes['host.name']` — use it to tell multiple hosts apart.
 
+## 5. Onboarding other hosts (remote OTLP senders)
+
+Every extra host runs the **same** native collector from §1–§2. Because it only
+*forwards* OTLP, onboarding a host is two edits to the §2 config — no change to the
+container collector, its exporter, or the ClickHouse schema.
+
+The in-stack receiver is **already reachable from the LAN**: Docker publishes
+`4317`/`4318` with the short `"4317:4317"` syntax, which binds `0.0.0.0` on the Docker
+host (confirm with `ss -ltn | grep -E ':4317|:4318'`). So there is **no
+`docker-compose.yml` change** to make — only the remote config and a firewall rule.
+
+**On each remote host**, take the §2 config and change exactly two things:
+
+```yaml
+processors:
+  resource:
+    attributes:
+      - key: host.name
+        value: web-01            # ← distinct name per host; this is how Grafana tells them apart
+        action: upsert
+
+exporters:
+  otlp:
+    endpoint: <docker-host-ip>:4317   # ← the Docker host's LAN address, not localhost
+    tls:
+      insecure: true                  # plaintext; fine on a trusted LAN, see Security below
+```
+
+Restart, then verify from the **Docker host** that the new `host.name` is landing:
+
+```bash
+docker exec akvorado-clickhouse-1 clickhouse-client -q "
+SELECT ResourceAttributes['host.name'] AS host, count() AS points, max(TimeUnix) AS latest
+FROM default.otel_metrics_sum
+WHERE TimeUnix > now() - INTERVAL 5 MINUTE
+GROUP BY host ORDER BY host"
+```
+
+In Grafana, split series per machine with `ResourceAttributes['host.name']` (add it to
+`GROUP BY` and as a series label) — the same panels from §4 then cover every host.
+
+### Security — the receiver is open and plaintext
+
+`4317`/`4318` accept OTLP from **anyone who can reach the port**, with no auth and no
+encryption. Pick a posture before onboarding senders:
+
+- **Trusted LAN (recommended here): restrict the port with a firewall.** Allow only
+  known senders and drop the rest. Example (iptables; adapt to `ufw`/`nftables`):
+
+  ```bash
+  LAN=192.168.0.0/24    # ← your trusted subnet
+  # allow the local LAN, drop everyone else on the OTLP ports
+  sudo iptables -A INPUT -p tcp -s "$LAN" --dport 4317 -j ACCEPT
+  sudo iptables -A INPUT -p tcp -s "$LAN" --dport 4318 -j ACCEPT
+  sudo iptables -A INPUT -p tcp --dport 4317 -j DROP
+  sudo iptables -A INPUT -p tcp --dport 4318 -j DROP
+  ```
+
+- **Crossing an untrusted network: add TLS + a bearer token** on the container
+  collector (`docker/otel/otel-collector.yaml`) and match it on the sender. This
+  requires editing the in-stack collector, so it is a real config change, not just docs:
+
+  ```yaml
+  # container collector — docker/otel/otel-collector.yaml
+  extensions:
+    bearertokenauth:
+      token: ${env:OTLP_INGEST_TOKEN}     # keep the value in config/secrets, not in git
+  receivers:
+    otlp:
+      protocols:
+        grpc: { endpoint: 0.0.0.0:4317, auth: { authenticator: bearertokenauth } }
+        http: { endpoint: 0.0.0.0:4318, auth: { authenticator: bearertokenauth } }
+  service:
+    extensions: [bearertokenauth]
+  ```
+
+  ```yaml
+  # remote sender — add the token, and real TLS (a bearer token over insecure:true is sniffable)
+  exporters:
+    otlp:
+      endpoint: <docker-host-ip>:4317
+      headers: { authorization: "Bearer <same-token>" }
+      tls: { ca_file: /etc/otelcol/ca.pem }   # server cert the container presents
+  ```
+
 ## Notes
 
-- **Multiple hosts:** install the same native collector on each; they all forward to
-  the one containerized collector's `4317`. If the host is remote, point `endpoint`
-  at the Docker host's address (and secure the link — the container's OTLP receiver
-  is plaintext by default and bound to `0.0.0.0`).
-- **Security:** `otel-collector`'s `4317`/`4318` are published on `0.0.0.0`. If you
-  onboard remote senders, front them with TLS/auth or restrict the published bind to
-  the loopback / a firewall.
-- **No port clash by design:** this config has no listening receivers/extensions and
-  disables self-metrics, so it coexists with the container collector. The container
-  keeps owning `4317`/`4318`; the host collector only makes an outbound OTLP connection.
+- **No port clash by design:** the *host* collector config has no listening
+  receivers/extensions and disables self-metrics, so it coexists with the container
+  collector. The container keeps owning `4317`/`4318`; each host collector only makes
+  an outbound OTLP connection.
+- **`host.name`** is set by the `resource` processor and lands in
+  `ResourceAttributes['host.name']` — the key for telling hosts apart (contrib builds
+  can fill it automatically with `resourcedetection`, detectors `[system]`).
