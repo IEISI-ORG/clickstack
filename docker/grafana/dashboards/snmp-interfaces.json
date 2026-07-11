@@ -4,7 +4,7 @@
   "tags": ["snmp", "telegraf"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "1m",
   "time": {"from": "now-6h", "to": "now"},
   "templating": {
@@ -36,7 +36,7 @@
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT $__timeInterval(time) AS time, concat(source, ' / ', ifName) AS iface, (max(ifHCInOctets) - min(ifHCInOctets)) * 8 / greatest(dateDiff('second', min(time), max(time)), 1) AS in_bps FROM default.snmp WHERE $__timeFilter(time) AND source IN (${source:singlequote}) GROUP BY time, iface ORDER BY time"
+          "rawSql": "SELECT time, iface, in_bps FROM (SELECT time, concat(source, ' / ', ifName) AS iface, (ifHCInOctets - lagInFrame(ifHCInOctets) OVER (PARTITION BY source, ifName ORDER BY time)) / greatest(toUnixTimestamp(time) - toUnixTimestamp(lagInFrame(time) OVER (PARTITION BY source, ifName ORDER BY time)), 1) * 8 AS in_bps FROM default.snmp WHERE $__timeFilter(time) AND source IN (${source:singlequote})) WHERE in_bps >= 0 ORDER BY time"
         }
       ]
     },
@@ -53,7 +53,7 @@
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT $__timeInterval(time) AS time, concat(source, ' / ', ifName) AS iface, (max(ifHCOutOctets) - min(ifHCOutOctets)) * 8 / greatest(dateDiff('second', min(time), max(time)), 1) AS out_bps FROM default.snmp WHERE $__timeFilter(time) AND source IN (${source:singlequote}) GROUP BY time, iface ORDER BY time"
+          "rawSql": "SELECT time, iface, out_bps FROM (SELECT time, concat(source, ' / ', ifName) AS iface, (ifHCOutOctets - lagInFrame(ifHCOutOctets) OVER (PARTITION BY source, ifName ORDER BY time)) / greatest(toUnixTimestamp(time) - toUnixTimestamp(lagInFrame(time) OVER (PARTITION BY source, ifName ORDER BY time)), 1) * 8 AS out_bps FROM default.snmp WHERE $__timeFilter(time) AND source IN (${source:singlequote})) WHERE out_bps >= 0 ORDER BY time"
         }
       ]
     },
