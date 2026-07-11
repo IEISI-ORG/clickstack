@@ -83,3 +83,5 @@ docker/telegraf/snmp-extra-targets.txt
 docker/telegraf/telegraf.d/agents.conf
 config/secrets/*
 !config/secrets/*.example
+# Local Claude Code config
+.claude/
