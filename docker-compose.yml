@@ -273,7 +273,7 @@ services:
       - config/secrets/secrets.env
     environment:
       IPINFO_DATABASES: country asn
-      UPDATE_FREQUENCY: 48h
+      UPDATE_FREQUENCY: 24h   # retry within a day if a run hits a transient outbound failure
     volumes:
       - akvorado-geoip:/data
 
