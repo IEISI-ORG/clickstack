@@ -29,10 +29,33 @@ receiver (the `-contrib` build, or any distro package built from it):
 
 ```bash
 VER=0.119.0   # any recent version is fine — see the version note below
+# Pick the release asset that matches this machine's CPU architecture:
+case "$(uname -m)" in
+  x86_64)          ARCH=amd64 ;;
+  aarch64|arm64)   ARCH=arm64 ;;   # 64-bit ARM (Raspberry Pi OS 64-bit, most modern SBCs)
+  armv7l|armv6l)   ARCH=armv7 ;;   # 32-bit ARM (older Raspberry Pi / Raspbian armhf)
+  i386|i686)       ARCH=386   ;;
+  *) echo "unknown arch $(uname -m); see the table below" >&2; exit 1 ;;
+esac
 curl -fsSLo /tmp/otelcol-contrib.deb \
-  "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${VER}/otelcol-contrib_${VER}_linux_amd64.deb"
+  "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${VER}/otelcol-contrib_${VER}_linux_${ARCH}.deb"
 sudo dpkg -i /tmp/otelcol-contrib.deb
 ```
+
+**Pick the right build for your CPU** (`uname -m` → release asset):
+
+| `uname -m` | Asset arch | Typical host |
+|---|---|---|
+| `x86_64` | `amd64` | Intel/AMD servers, most PCs |
+| `aarch64` / `arm64` | `arm64` | 64-bit Raspberry Pi OS, modern SBCs |
+| `armv7l` / `armv6l` | `armv7` | older Raspberry Pi / 32-bit Raspbian (armhf) |
+| `i386` / `i686` | `386` | legacy 32-bit x86 |
+
+> The 32-bit ARM `.deb` declares Debian arch `armhf`, which matches Raspbian, so
+> `dpkg -i` installs cleanly. If `dpkg` ever refuses on an architecture mismatch,
+> use the matching `..._linux_${ARCH}.tar.gz` instead — it's a single static
+> binary with no packaging metadata; drop it in `/usr/local/bin` and run it under
+> your own systemd unit.
 
 The package name, systemd unit, and config path vary by distribution — commonly
 **`otelcol-contrib`** → `/etc/otelcol-contrib/config.yaml`, or **`otelcol`** →
