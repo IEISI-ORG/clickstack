@@ -155,8 +155,16 @@ WHERE MetricName = 'system.memory.usage' AND $__timeFilter(TimeUnix)
 GROUP BY time, state ORDER BY time
 ```
 
-The `host.name` resource attribute (from `resourcedetection`) is in
-`ResourceAttributes['host.name']` — use it to tell multiple hosts apart.
+The `host.name` resource attribute — set by the `resource` processor in §2 (or
+auto-filled by `resourcedetection` on contrib builds) — lands in
+`ResourceAttributes['host.name']`; use it to tell multiple hosts apart.
+
+A provisioned **Host Metrics** dashboard
+(`docker/grafana/dashboards/host-metrics.json`) already does this: every panel
+splits its series by `ResourceAttributes['host.name']`, and a **`Host` dropdown**
+(`$host` template variable) lets you focus on one machine or view **All**. The
+dropdown is populated from `SELECT DISTINCT ResourceAttributes['host.name']`, so a
+newly onboarded host appears automatically — no dashboard edit needed.
 
 ## 5. Onboarding other hosts (remote OTLP senders)
 
@@ -185,6 +193,15 @@ exporters:
     tls:
       insecure: true                  # plaintext; fine on a trusted LAN, see Security below
 ```
+
+> **Set `host.name` correctly *before* the first start.** The name is written into
+> every row as `ResourceAttributes['host.name']`. If a host starts with the wrong
+> name (e.g. a copy-paste of another host's config), its metrics are mislabelled at
+> write time — and if the name collides with a host that is *also* running, the two
+> machines' rows are interleaved under one label with nothing in the row to tell them
+> apart. Untangling that after the fact is only possible by luck (e.g. the two
+> collectors happening to emit at different sub-second timestamps) and needs manual
+> `ALTER TABLE … UPDATE` mutations. Renaming later is cheap; unmixing is not.
 
 Restart, then verify from the **Docker host** that the new `host.name` is landing:
 
