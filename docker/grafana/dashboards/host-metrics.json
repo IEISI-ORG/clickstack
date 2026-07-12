@@ -4,9 +4,25 @@
   "tags": ["host", "otel"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "30s",
   "time": {"from": "now-6h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "Host",
+        "type": "query",
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+        "query": "SELECT DISTINCT ResourceAttributes['host.name'] FROM default.otel_metrics_sum WHERE ResourceAttributes['host.name'] != '' ORDER BY 1",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": null,
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]}
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
@@ -21,7 +37,7 @@
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(ResourceAttributes['host.name'], ' ', replaceOne(MetricName,'system.cpu.load_average.','')) AS series, avg(Value) AS value FROM default.otel_metrics_gauge WHERE MetricName IN ('system.cpu.load_average.1m','system.cpu.load_average.5m','system.cpu.load_average.15m') AND $__timeFilter(TimeUnix) GROUP BY time, series ORDER BY time"
+          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(ResourceAttributes['host.name'], ' ', replaceOne(MetricName,'system.cpu.load_average.','')) AS series, avg(Value) AS value FROM default.otel_metrics_gauge WHERE MetricName IN ('system.cpu.load_average.1m','system.cpu.load_average.5m','system.cpu.load_average.15m') AND $__timeFilter(TimeUnix) AND ResourceAttributes['host.name'] IN ($host) GROUP BY time, series ORDER BY time"
         }
       ]
     },
@@ -38,7 +54,7 @@
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(ResourceAttributes['host.name'], ' ', Attributes['state']) AS series, avg(Value) AS bytes FROM default.otel_metrics_sum WHERE MetricName='system.memory.usage' AND $__timeFilter(TimeUnix) GROUP BY time, series ORDER BY time"
+          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(ResourceAttributes['host.name'], ' ', Attributes['state']) AS series, avg(Value) AS bytes FROM default.otel_metrics_sum WHERE MetricName='system.memory.usage' AND $__timeFilter(TimeUnix) AND ResourceAttributes['host.name'] IN ($host) GROUP BY time, series ORDER BY time"
         }
       ]
     },
@@ -55,7 +71,7 @@
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT TimeUnix AS time, series, bps FROM (SELECT TimeUnix, concat(ResourceAttributes['host.name'],' ',Attributes['device'],' ',Attributes['direction']) AS series, (Value - lagInFrame(Value) OVER w) / greatest(toUnixTimestamp(TimeUnix) - toUnixTimestamp(lagInFrame(TimeUnix) OVER w), 1) AS bps FROM default.otel_metrics_sum WHERE MetricName='system.disk.io' AND $__timeFilter(TimeUnix) WINDOW w AS (PARTITION BY ResourceAttributes['host.name'], Attributes['device'], Attributes['direction'] ORDER BY TimeUnix)) WHERE bps >= 0 ORDER BY time"
+          "rawSql": "SELECT TimeUnix AS time, series, bps FROM (SELECT TimeUnix, concat(ResourceAttributes['host.name'],' ',Attributes['device'],' ',Attributes['direction']) AS series, (Value - lagInFrame(Value) OVER w) / greatest(toUnixTimestamp(TimeUnix) - toUnixTimestamp(lagInFrame(TimeUnix) OVER w), 1) AS bps FROM default.otel_metrics_sum WHERE MetricName='system.disk.io' AND $__timeFilter(TimeUnix) AND ResourceAttributes['host.name'] IN ($host) WINDOW w AS (PARTITION BY ResourceAttributes['host.name'], Attributes['device'], Attributes['direction'] ORDER BY TimeUnix)) WHERE bps >= 0 ORDER BY time"
         }
       ]
     },
@@ -72,7 +88,7 @@
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT TimeUnix AS time, series, bps FROM (SELECT TimeUnix, concat(ResourceAttributes['host.name'],' ',Attributes['device'],' ',Attributes['direction']) AS series, (Value - lagInFrame(Value) OVER w) / greatest(toUnixTimestamp(TimeUnix) - toUnixTimestamp(lagInFrame(TimeUnix) OVER w), 1) AS bps FROM default.otel_metrics_sum WHERE MetricName='system.network.io' AND $__timeFilter(TimeUnix) WINDOW w AS (PARTITION BY ResourceAttributes['host.name'], Attributes['device'], Attributes['direction'] ORDER BY TimeUnix)) WHERE bps >= 0 ORDER BY time"
+          "rawSql": "SELECT TimeUnix AS time, series, bps FROM (SELECT TimeUnix, concat(ResourceAttributes['host.name'],' ',Attributes['device'],' ',Attributes['direction']) AS series, (Value - lagInFrame(Value) OVER w) / greatest(toUnixTimestamp(TimeUnix) - toUnixTimestamp(lagInFrame(TimeUnix) OVER w), 1) AS bps FROM default.otel_metrics_sum WHERE MetricName='system.network.io' AND $__timeFilter(TimeUnix) AND ResourceAttributes['host.name'] IN ($host) WINDOW w AS (PARTITION BY ResourceAttributes['host.name'], Attributes['device'], Attributes['direction'] ORDER BY TimeUnix)) WHERE bps >= 0 ORDER BY time"
         }
       ]
     },
@@ -89,7 +105,7 @@
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
           "editorType": "sql",
           "queryType": "timeseries",
-          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(ResourceAttributes['host.name'],' ',Attributes['mountpoint']) AS series, avg(Value) AS used_bytes FROM default.otel_metrics_sum WHERE MetricName='system.filesystem.usage' AND Attributes['state']='used' AND $__timeFilter(TimeUnix) GROUP BY time, series ORDER BY time"
+          "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(ResourceAttributes['host.name'],' ',Attributes['mountpoint']) AS series, avg(Value) AS used_bytes FROM default.otel_metrics_sum WHERE MetricName='system.filesystem.usage' AND Attributes['state']='used' AND $__timeFilter(TimeUnix) AND ResourceAttributes['host.name'] IN ($host) GROUP BY time, series ORDER BY time"
         }
       ]
     }
