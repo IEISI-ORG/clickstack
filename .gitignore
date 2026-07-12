@@ -85,3 +85,6 @@ config/secrets/*
 !config/secrets/*.example
 # Local Claude Code config
 .claude/
+
+# Draft write-ups + reference material (Medium article, etc.) — never publish to the repo
+papers/
