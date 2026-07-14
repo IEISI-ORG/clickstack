@@ -71,6 +71,7 @@ scripts/*.csv
 
 # docker
 docker-compose.prod.yml
+docker-compose.override.yml
 .volumes
 
 # NX

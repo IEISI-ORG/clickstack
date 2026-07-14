@@ -284,7 +284,7 @@ services:
     env_file:
       - config/secrets/secrets.env
     environment:
-      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource,hamedkarbasi93-kafka-datasource
       GF_SECURITY_ADMIN_USER: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
     ports:
@@ -295,6 +295,7 @@ services:
       - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - clickhouse
+      - kafka
 
   telegraf:
     image: telegraf:1.32-alpine

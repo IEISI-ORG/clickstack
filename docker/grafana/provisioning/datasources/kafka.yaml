@@ -1,0 +1,11 @@
+apiVersion: 1
+datasources:
+  - name: Kafka
+    uid: kafka
+    type: hamedkarbasi93-kafka-datasource
+    access: proxy
+    isDefault: false
+    editable: true
+    jsonData:
+      bootstrapServers: 'kafka:9092'
+      securityProtocol: 'PLAINTEXT'

@@ -1,0 +1,35 @@
+{
+  "uid": "kafka-flows-raw",
+  "title": "Kafka - Raw Flows (Live)",
+  "tags": ["kafka", "akvorado", "debug"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "5s",
+  "time": {"from": "now-5m", "to": "now"},
+  "description": "Live tail of the akvorado 'flows-v5' Kafka topic (inlet -> outlet), decoded as the RawFlow protobuf message. Topic is named 'flows-v5' (base name 'flows' from akvorado.yaml, suffixed with the schema version by the orchestrator), not 'flows'. Payload itself stays opaque undecoded bytes (NetFlow/sFlow/GOB) at this stage; use this to confirm the inlet is producing and to inspect decoder/timestamp metadata, not for traffic content (see ClickHouse dashboards for that).",
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "flows-v5 topic - live messages",
+      "gridPos": {"h": 22, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "hamedkarbasi93-kafka-datasource", "uid": "kafka"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "hamedkarbasi93-kafka-datasource", "uid": "kafka"},
+          "topicName": "flows-v5",
+          "partition": "all",
+          "autoOffsetReset": "latest",
+          "timestampMode": "message",
+          "messageFormat": "protobuf",
+          "protobufSchemaSource": "inlineSchema",
+          "protobufSchema": "syntax = \"proto3\";\npackage input;\noption go_package = \"akvorado/common/pb\";\n\n// RawFlow is an undecoded flow with some options.\nmessage RawFlow {\n    uint64 time_received = 1;                         // when the flow was received\n    bytes payload = 2;                                // payload of the flow\n    bytes source_address = 3;                         // source IPv6 address\n    bool use_source_address = 4;                      // use source address as exporter address\n    Decoder decoder = 5;                              // use this specific decoder\n    TimestampSource timestamp_source = 6;             // source of the timestamp\n    DecapsulationProtocol decapsulation_protocol = 7; // protocol to decap\n    uint64 rate_limit = 8;                            // per-exporter rate limit (flows/s), 0 means no limit\n\n    enum Decoder {\n        DECODER_UNSPECIFIED = 0;\n        DECODER_NETFLOW = 1;\n        DECODER_SFLOW = 2;\n        DECODER_GOB = 3;\n    }\n    enum TimestampSource {\n        TS_INPUT = 0;\n        TS_NETFLOW_PACKET = 1;\n        TS_NETFLOW_FIRST_SWITCHED = 2;\n    }\n    enum DecapsulationProtocol {\n        DECAP_NONE = 0;\n        DECAP_IPIP = 1;\n        DECAP_GRE = 2;\n        DECAP_VXLAN = 3;\n        DECAP_SRV6 = 4;\n    }\n}\n"
+        }
+      ]
+    }
+  ]
+}
