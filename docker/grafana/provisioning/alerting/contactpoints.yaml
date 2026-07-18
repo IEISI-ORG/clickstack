@@ -1,0 +1,21 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: telegram-container-down
+    receivers:
+      - uid: telegram-container-down
+        type: telegram
+        # Known Grafana bug (grafana/grafana#69950): $__env{} substitution for
+        # a pure-digit value (like a numeric chat ID) gets auto-coerced to a
+        # JSON number internally, failing schema validation (Config.chatid
+        # wants string) and crash-looping the container on startup -- happened
+        # here twice (~90s outage total) before landing on this fix. The YAML
+        # block-literal (|) form is the confirmed community workaround: its
+        # trailing newline defeats Grafana's numeric-sniffing.
+        settings:
+          bottoken: |
+            $__env{TELEGRAM_BOT_TOKEN}
+          chatid: |
+            $__env{TELEGRAM_CHAT_ID}
+        disableResolveMessage: false

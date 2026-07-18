@@ -1,0 +1,57 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: infra-container-state
+    folder: Infra Alerts
+    interval: 1m
+    rules:
+      - uid: container-down
+        title: Container down
+        condition: C
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "One or more Docker containers on the host are not in the running state (see the query in Grafana for which)."
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: clickhouse
+            model:
+              refId: A
+              rawQuery: true
+              format: table
+              rawSql: |
+                SELECT count() AS down_count
+                FROM (
+                  SELECT container_name, argMax(container_status, time) AS status
+                  FROM docker_container_status
+                  WHERE time > now() - INTERVAL 10 MINUTE
+                    -- containers intentionally left stopped (ad-hoc tools, not always-on
+                    -- services) -- add to this list rather than let them page you
+                    AND container_name NOT IN ('kali-pentest')
+                  GROUP BY container_name
+                )
+                WHERE status != 'running'
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: OK
+        execErrState: Alerting

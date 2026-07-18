@@ -297,6 +297,23 @@ services:
       - clickhouse
       - kafka
 
+  # Read-only, whitelisted proxy in front of the real docker.sock. Telegraf never
+  # touches the raw socket -- a :ro bind mount of docker.sock does NOT restrict
+  # API calls made over the connection once opened (full read/write access,
+  # equivalent to host root), so the actual restriction has to happen here,
+  # at the HTTP-endpoint level. POST=0 blocks all writes; only the read
+  # endpoints telegraf's docker input needs are enabled.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
   telegraf:
     image: telegraf:1.32-alpine
     restart: unless-stopped
@@ -308,4 +325,5 @@ services:
       - ./docker/telegraf/telegraf.d:/etc/telegraf/telegraf.d:ro
     depends_on:
       - clickhouse
+      - docker-socket-proxy
 
