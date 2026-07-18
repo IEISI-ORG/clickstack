@@ -7,15 +7,22 @@ contactPoints:
       - uid: telegram-container-down
         type: telegram
         # Known Grafana bug (grafana/grafana#69950): $__env{} substitution for
-        # a pure-digit value (like a numeric chat ID) gets auto-coerced to a
-        # JSON number internally, failing schema validation (Config.chatid
-        # wants string) and crash-looping the container on startup -- happened
-        # here twice (~90s outage total) before landing on this fix. The YAML
-        # block-literal (|) form is the confirmed community workaround: its
-        # trailing newline defeats Grafana's numeric-sniffing.
+        # a PURE-DIGIT value (like a numeric chat ID) gets auto-coerced to a
+        # JSON number internally (Grafana runs strconv.ParseInt on the
+        # resolved string; quoting in YAML doesn't matter since quotes vanish
+        # after parsing and the underlying digit string is unchanged),
+        # failing schema validation (Config.chatid wants string) and
+        # crash-looping the container on startup. A block-literal (|) value
+        # works around it: the resolved string keeps a trailing newline,
+        # which defeats ParseInt. This ONLY applies to chatid -- a bot token
+        # (e.g. "123456789:AAF-example-not-a-real-token") isn't pure digits
+        # so it was never at risk of this coercion and must NOT get the same
+        # treatment: a trailing newline on bottoken breaks the URL Grafana builds
+        # ("https://api.telegram.org/bot<token>/sendMessage"), which silently
+        # failed real alert delivery in production before this fix (caught
+        # via a live end-to-end test, not just the UI test button).
         settings:
-          bottoken: |
-            $__env{TELEGRAM_BOT_TOKEN}
+          bottoken: $__env{TELEGRAM_BOT_TOKEN}
           chatid: |
             $__env{TELEGRAM_CHAT_ID}
         disableResolveMessage: false
