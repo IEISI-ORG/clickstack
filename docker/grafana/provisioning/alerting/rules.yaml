@@ -32,7 +32,7 @@ groups:
                   WHERE time > now() - INTERVAL 10 MINUTE
                     -- containers intentionally left stopped (ad-hoc tools, not always-on
                     -- services) -- add to this list rather than let them page you
-                    AND container_name NOT IN ('kali-pentest')
+                    AND container_name NOT IN ('kali-pentest', 'temporal-ui', 'temporal-admin-tools')
                   GROUP BY container_name
                 )
                 WHERE status != 'running'
