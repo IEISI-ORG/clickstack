@@ -13,7 +13,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "One or more Docker containers on the host are not in the running state (see the query in Grafana for which)."
+          summary: "One or more Docker containers on the host are not running and did not exit cleanly (see the query in Grafana for which)."
         data:
           - refId: A
             relativeTimeRange:
@@ -27,7 +27,10 @@ groups:
               rawSql: |
                 SELECT count() AS down_count
                 FROM (
-                  SELECT container_name, argMax(container_status, time) AS status
+                  SELECT container_name,
+                         argMax(container_status, time) AS status,
+                         argMax(exitcode, time) AS exit_code,
+                         argMax(oomkilled, time) AS oom
                   FROM docker_container_status
                   WHERE time > now() - INTERVAL 10 MINUTE
                     -- containers intentionally left stopped (ad-hoc tools, not always-on
@@ -36,6 +39,9 @@ groups:
                   GROUP BY container_name
                 )
                 WHERE status != 'running'
+                  -- a clean exit (code 0, not OOM-killed) is a finished one-shot job such as a
+                  -- compose init/migrate container, not an outage
+                  AND NOT (status = 'exited' AND exit_code = 0 AND oom = 0)
           - refId: B
             datasourceUid: "__expr__"
             model:
