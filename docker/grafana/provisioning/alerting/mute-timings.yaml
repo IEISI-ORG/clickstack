@@ -1,0 +1,17 @@
+apiVersion: 1
+
+# Quiet hours: no Telegram pages overnight. An alert still firing when the window
+# ends is sent at the next group flush after 06:00; one that fires and resolves
+# inside the window is never sent. Only Grafana alerts are muted -- lab-monitor
+# (host heartbeat, tunnel, phone) pages on its own path regardless.
+muteTimes:
+  - orgId: 1
+    name: quiet-hours
+    time_intervals:
+      - times:
+          # a range can't wrap midnight, so it is split in two
+          - start_time: "22:00"
+            end_time: "24:00"
+          - start_time: "00:00"
+            end_time: "06:00"
+        location: Australia/Brisbane

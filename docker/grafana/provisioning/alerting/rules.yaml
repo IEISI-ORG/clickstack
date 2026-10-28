@@ -13,7 +13,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "One or more Docker containers on the host are not running and did not exit cleanly (see the query in Grafana for which)."
+          summary: "One or more always-on Docker containers on the host are not running or are missing (see the allowlist query in Grafana for which)."
         data:
           - refId: A
             relativeTimeRange:
@@ -25,23 +25,37 @@ groups:
               rawQuery: true
               format: table
               rawSql: |
+                -- Allowlist: the always-on services. Anything else on the host (test stacks,
+                -- one-shot init jobs, debug-profile tools) is ignored. When a permanent
+                -- container is added, renamed or retired, update this list in the same change.
                 SELECT count() AS down_count
                 FROM (
+                  SELECT arrayJoin([
+                    'akvorado-akvorado-conntrack-fixer-1', 'akvorado-akvorado-console-1',
+                    'akvorado-akvorado-inlet-1', 'akvorado-akvorado-orchestrator-1',
+                    'akvorado-akvorado-outlet-1', 'akvorado-clickhouse-1',
+                    'akvorado-docker-socket-proxy-1', 'akvorado-geoip-1', 'akvorado-grafana-1',
+                    'akvorado-kafka-1', 'akvorado-kafka-ui-1', 'akvorado-otel-collector-1',
+                    'akvorado-redis-1', 'akvorado-telegraf-1', 'akvorado-traefik-1',
+                    'freepbx-docker-db-1', 'freepbx-docker-freepbx-1',
+                    'postiz', 'postiz-postgres', 'postiz-redis',
+                    'temporal', 'temporal-elasticsearch', 'temporal-postgresql'
+                  ]) AS container_name
+                ) AS expected
+                LEFT JOIN (
                   SELECT container_name,
                          argMax(container_status, time) AS status,
-                         argMax(exitcode, time) AS exit_code,
-                         argMax(oomkilled, time) AS oom
+                         max(time) AS last_seen
                   FROM docker_container_status
                   WHERE time > now() - INTERVAL 10 MINUTE
-                    -- containers intentionally left stopped (ad-hoc tools, not always-on
-                    -- services) -- add to this list rather than let them page you
-                    AND container_name NOT IN ('kali-pentest', 'temporal-ui', 'temporal-admin-tools')
                   GROUP BY container_name
-                )
-                WHERE status != 'running'
-                  -- a clean exit (code 0, not OOM-killed) is a finished one-shot job such as a
-                  -- compose init/migrate container, not an outage
-                  AND NOT (status = 'exited' AND exit_code = 0 AND oom = 0)
+                ) AS seen USING (container_name)
+                -- down = not running, or missing from the latest Telegraf scrape (each scrape is
+                -- spread over ~2 s). A missing row comes back as status '' / last_seen 1970, so a
+                -- removed container counts too; the 2m `for:` absorbs a compose recreate.
+                WHERE seen.status != 'running'
+                   OR seen.last_seen < (SELECT max(time) FROM docker_container_status
+                                        WHERE time > now() - INTERVAL 10 MINUTE) - INTERVAL 30 SECOND
           - refId: B
             datasourceUid: "__expr__"
             model:

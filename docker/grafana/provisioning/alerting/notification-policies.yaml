@@ -7,3 +7,11 @@ policies:
     group_wait: 30s
     group_interval: 5m
     repeat_interval: 4h
+    # Alertmanager rejects mute timings on the root policy, so a catch-all child
+    # route carries quiet-hours (mute-timings.yaml) for every alert.
+    routes:
+      - receiver: telegram-container-down
+        object_matchers:
+          - ["alertname", "=~", ".+"]
+        mute_time_intervals:
+          - quiet-hours
