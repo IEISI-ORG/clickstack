@@ -50,12 +50,16 @@ groups:
                   WHERE time > now() - INTERVAL 10 MINUTE
                   GROUP BY container_name
                 ) AS seen USING (container_name)
-                -- down = not running, or missing from the latest Telegraf scrape (each scrape is
-                -- spread over ~2 s). A missing row comes back as status '' / last_seen 1970, so a
-                -- removed container counts too; the 2m `for:` absorbs a compose recreate.
+                -- down = not running, or absent from recent Telegraf scrapes. A scrape is spread
+                -- over ~2 s: exited containers are stamped :00, running ones :01-:02 after their
+                -- stats call, and the :00 flush lands between them, so max(time) can run ~59 s
+                -- ahead of a healthy container. 90 s (> one 60 s interval) tolerates that and still
+                -- flags a container missing from two scrapes. A missing row comes back as
+                -- status '' / last_seen 1970, so a removed container counts too; the 2m `for:`
+                -- absorbs a compose recreate.
                 WHERE seen.status != 'running'
                    OR seen.last_seen < (SELECT max(time) FROM docker_container_status
-                                        WHERE time > now() - INTERVAL 10 MINUTE) - INTERVAL 30 SECOND
+                                        WHERE time > now() - INTERVAL 10 MINUTE) - INTERVAL 90 SECOND
           - refId: B
             datasourceUid: "__expr__"
             model:
