@@ -38,6 +38,7 @@ groups:
                     'akvorado-kafka-1', 'akvorado-kafka-ui-1', 'akvorado-otel-collector-1',
                     'akvorado-redis-1', 'akvorado-telegraf-1', 'akvorado-traefik-1',
                     'freepbx-docker-db-1', 'freepbx-docker-freepbx-1',
+                    'hitpacific-caddy-proxy',
                     'postiz', 'postiz-postgres', 'postiz-redis',
                     'temporal', 'temporal-elasticsearch', 'temporal-postgresql'
                   ]) AS container_name
